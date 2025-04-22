@@ -41,7 +41,7 @@ export type SearchResultsCache = {
 };
 
 export type SearchResult = Document & {
-  relevantPages?: {
+  relevantPages: {
     start_page: number;
     end_page: number;
     relevance_score: number;

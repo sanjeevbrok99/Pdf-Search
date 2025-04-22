@@ -20,12 +20,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 export async function searchGoogleForPDFs(query: string, grade?: string): Promise<any[]> {
   const gradeQuery = grade ? ` "Grade ${grade}"` : ''
   const fullQuery = `${query}${gradeQuery} filetype:pdf`
-  
+
   const url = `https://www.googleapis.com/customsearch/v1?key=${googleSearchApiKey}&cx=${googleSearchEngineId}&q=${encodeURIComponent(fullQuery)}`
-  
+
   const response = await fetch(url)
   const data = await response.json()
-  
+
   return data.items || []
 }
 

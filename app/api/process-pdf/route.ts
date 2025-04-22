@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase, updateDocumentStatus } from '@/lib/supabase'
-import { PDFExtract, PDFPage } from 'pdf.js-extract'
+import { PDFExtract, PDFExtractPage } from 'pdf.js-extract'
 
 const pdfExtract = new PDFExtract()
 
@@ -15,9 +15,11 @@ async function extractPageContent(buffer: Buffer): Promise<{
   content: string;
   totalPages: number;
 }> {
-  const data = await pdfExtract.extractBuffer(buffer)
+  const data:any = await pdfExtract.extractBuffer(buffer)
   return {
-    content: data.pages.map((page: PDFPage) => page.content.join(' ')).join(' '),
+    content: data.pages.map((page: PDFExtractPage) =>
+      page.content.map(item => item.str).join(' ')
+    ).join(' '),
     totalPages: data.meta.numPages
   }
 }
@@ -52,13 +54,13 @@ export async function POST(request: Request) {
     try {
       // Download and process PDF
       const pdfBuffer = await downloadPDF(url)
-      
+
       // Extract content and metadata
       const { content, totalPages } = await extractPageContent(pdfBuffer)
-      
+
       // Generate preview image
       const previewImageUrl = await generatePreviewImage(pdfBuffer)
-      
+
       // Find relevant pages
       const relevantPages = await findRelevantPages(content, query, totalPages)
 
