@@ -4,12 +4,12 @@ import { useState } from 'react';
 import { SearchBar } from '@/components/SearchBar';
 import { SearchResults } from '@/components/SearchResults';
 import { GradeDropdown } from '@/components/GradeDropdown';
-import { SearchResultType } from '@/types';
+import { SearchResult } from '@/types';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
-  const [results, setResults] = useState<SearchResultType[]>([]);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
 
