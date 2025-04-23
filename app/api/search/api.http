@@ -1,0 +1,7 @@
+@server =  http://localhost:3001
+
+###
+# @name  search
+
+GET {{server}}/api/search?q=example+query&grade=9
+Content-Type: application/json

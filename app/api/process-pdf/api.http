@@ -1,0 +1,12 @@
+@server =  http://localhost:3001
+
+###
+# @name  process-pdf
+POST {{server}}/api/process-pdf
+Content-Type: application/json
+
+{
+  "documentId": "1234567890",
+  "url": "https://example.com/document.pdf",
+  "query": "example query"
+}

@@ -1,0 +1,13 @@
+@server =  http://localhost:3001
+
+###
+# @name  upload
+
+POST {{server}}/api/upload
+Content-Type: application/json
+
+{
+  "title": "new pdf",
+  "gradeLevel": "9",
+  "file": "https://example.com/document.pdf"
+}
