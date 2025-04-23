@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "PORT=3001 NODE_OPTIONS='--inspect' next dev",
     "build": "next build",
     "start": "next start",
     "debug": "NODE_OPTIONS='--inspect' next dev"
