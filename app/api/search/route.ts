@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     if (!skipCache) {
       const cachedResults = await getSearchResultsFromCache(query, gradeLevel || undefined)
       if (cachedResults) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           documents: cachedResults,
           fromCache: true
         })
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 
     // Start Google Search
     const googleResults = await searchGoogleForPDFs(query, gradeLevel || undefined)
-    
+
     // Process each result
     const processPromises = googleResults.map(async (result: any) => {
       // Check if document already exists

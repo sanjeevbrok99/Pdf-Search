@@ -1,70 +1,87 @@
 import { NextResponse } from 'next/server'
 import { supabase, updateDocumentStatus } from '@/lib/supabase'
-import { PDFExtract, PDFExtractPage } from 'pdf.js-extract'
+import pdfParse from 'pdf-parse'
 
-const pdfExtract = new PDFExtract()
-
-async function downloadPDF(url: string): Promise<Buffer> {
+// Download PDF from URL and return as ArrayBuffer
+async function downloadPDF(url: string): Promise<ArrayBuffer> {
   const response = await fetch(url)
   if (!response.ok) throw new Error(`Failed to download PDF: ${response.statusText}`)
-  const arrayBuffer = await response.arrayBuffer()
-  return Buffer.from(arrayBuffer)
+  return response.arrayBuffer()
 }
 
+// Extract text content and total pages from a PDF Buffer
 async function extractPageContent(buffer: Buffer): Promise<{
-  content: string;
-  totalPages: number;
+  content: string
+  totalPages: number
 }> {
-  const data:any = await pdfExtract.extractBuffer(buffer)
-  return {
-    content: data.pages.map((page: PDFExtractPage) =>
-      page.content.map(item => item.str).join(' ')
-    ).join(' '),
-    totalPages: data.meta.numPages
+  try {
+    const data = await pdfParse(buffer)
+    const content = data.text
+    const totalPages = data.numpages
+
+    return {
+      content,
+      totalPages
+    }
+  } catch (error) {
+    console.error('Error extracting PDF content:', error)
+    throw new Error('Failed to extract PDF content')
   }
 }
 
-async function generatePreviewImage(buffer: Buffer): Promise<string> {
-  // TODO: Implement PDF to image conversion
-  // For now, return a placeholder
+// Placeholder preview image URL generator
+async function generatePreviewImage(_buffer: Buffer): Promise<string> {
+  // You can later plug a real pdf-to-image converter here
   return '/placeholder.png'
 }
 
-async function findRelevantPages(content: string, query: string, totalPages: number): Promise<{
-  startPage: number;
-  endPage: number;
-  relevanceScore: number;
+// Simple relevance calculation based on query terms frequency
+async function findRelevantPages(
+  content: string,
+  query: string,
+  totalPages: number
+): Promise<{
+  startPage: number
+  endPage: number
+  relevanceScore: number
 }> {
-  // TODO: Implement more sophisticated page relevance detection
-  // For now, return the first few pages
+  const queryTerms = query.toLowerCase().split(' ')
+  const contentLower = content.toLowerCase()
+
+  const termFrequency = queryTerms.reduce((count, term) => {
+    const regex = new RegExp(term, 'g')
+    const matches = contentLower.match(regex)
+    return count + (matches ? matches.length : 0)
+  }, 0)
+
+  const relevanceScore = Math.min(termFrequency / 10, 1)
+
   return {
     startPage: 1,
     endPage: Math.min(5, totalPages),
-    relevanceScore: 0.8
+    relevanceScore
   }
 }
 
+// POST handler for processing the PDF
 export async function POST(request: Request) {
   try {
     const { documentId, url, query } = await request.json()
 
-    // Update status to processing
+    // Set document status to 'processing'
     await updateDocumentStatus(documentId, 'processing')
 
     try {
-      // Download and process PDF
-      const pdfBuffer = await downloadPDF(url)
+      // Download and parse the PDF
+      const pdfBuffer = Buffer.from(await downloadPDF(url))
 
-      // Extract content and metadata
       const { content, totalPages } = await extractPageContent(pdfBuffer)
 
-      // Generate preview image
       const previewImageUrl = await generatePreviewImage(pdfBuffer)
 
-      // Find relevant pages
       const relevantPages = await findRelevantPages(content, query, totalPages)
 
-      // Update document with content and metadata
+      // Update the document with extracted details
       await supabase
         .from('documents')
         .update({
@@ -76,7 +93,7 @@ export async function POST(request: Request) {
         })
         .eq('id', documentId)
 
-      // Store relevant pages information
+      // Insert relevant page info
       await supabase
         .from('relevant_pages')
         .insert({
@@ -88,6 +105,7 @@ export async function POST(request: Request) {
         })
 
       return NextResponse.json({ success: true })
+
     } catch (processingError) {
       console.error('PDF processing error:', processingError)
       await updateDocumentStatus(
@@ -100,11 +118,12 @@ export async function POST(request: Request) {
         { status: 500 }
       )
     }
-  } catch (requestError) {
-    console.error('Request error:', requestError)
+
+  } catch (error) {
+    console.error('Route error:', error)
     return NextResponse.json(
-      { error: 'Invalid request' },
-      { status: 400 }
+      { error: error instanceof Error ? error.message : 'Failed to process request' },
+      { status: 500 }
     )
   }
 }
