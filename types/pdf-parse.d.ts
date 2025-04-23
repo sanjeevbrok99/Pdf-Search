@@ -1,12 +1,16 @@
-declare module 'pdf-parse' {
-  export interface PDFParseData {
+declare module 'pdf-parse/lib/pdf-parse.js' {
+  import { Buffer } from 'buffer';
+
+  interface PDFInfo {
+    text: string;
     numpages: number;
     numrender: number;
-    info: any;
+    info: Record<string, any>;
     metadata: any;
     version: string;
-    text: string;
   }
 
-  export default function pdfParse(dataBuffer: Buffer, options?: any): Promise<PDFParseData>;
+  function pdf(buffer: Buffer, options?: any): Promise<PDFInfo>;
+
+  export default pdf;
 }

@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { supabase, updateDocumentStatus } from '@/lib/supabase'
-import pdfParse from 'pdf-parse'
-
+import pdfParse from 'pdf-parse/lib/pdf-parse.js'
+import { fromBuffer } from 'pdf2pic'
+import path from 'path'
+import fs from 'fs/promises'
+import { v4 as uuidv4 } from 'uuid'
 // Download PDF from URL and return as ArrayBuffer
 async function downloadPDF(url: string): Promise<ArrayBuffer> {
   const response = await fetch(url)
@@ -30,9 +33,49 @@ async function extractPageContent(buffer: Buffer): Promise<{
 }
 
 // Placeholder preview image URL generator
-async function generatePreviewImage(_buffer: Buffer): Promise<string> {
-  // You can later plug a real pdf-to-image converter here
-  return '/placeholder.png'
+
+async function generatePreviewImage(buffer: Buffer): Promise<string> {
+  const filename = `preview-${uuidv4()}.png`
+  const tmpDir = '/tmp'
+  const outputPath = path.join(tmpDir, filename)
+
+  // Ensure /tmp directory exists
+  try {
+    await fs.access(tmpDir)
+  } catch {
+    await fs.mkdir(tmpDir, { recursive: true })
+  }
+
+  const converter = fromBuffer(buffer, {
+    density: 100,
+    saveFilename: filename,
+    savePath: tmpDir,
+    format: 'png',
+    width: 600,
+    height: 800,
+  })
+
+  // Convert first page to image
+  await converter(1)
+
+  // Verify the file exists before trying to read it
+  await fs.access(outputPath)
+
+  // Upload the image to Supabase Storage
+  const fileData = await fs.readFile(outputPath)
+
+  const { data, error } = await supabase.storage
+    .from('image-previews')
+    .upload(filename, fileData, {
+      contentType: 'image/png',
+      upsert: true,
+    })
+
+  if (error) throw error
+
+  const publicURL = supabase.storage.from('image-previews').getPublicUrl(filename).data.publicUrl
+
+  return publicURL
 }
 
 // Simple relevance calculation based on query terms frequency

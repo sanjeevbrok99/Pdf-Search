@@ -3,5 +3,5 @@
 ###
 # @name  search
 
-GET {{server}}/api/search?q=example+query&grade=9&skipCache=true
+GET {{server}}/api/search?q=maths+query&grade=9&skipCache=true
 Content-Type: application/json

@@ -58,7 +58,11 @@ export async function GET(request: Request) {
       if (error) throw error
 
       // Start background processing
-      fetch('/api/process-pdf', {
+      const baseUrl = process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL}` 
+        : 'http://localhost:3001'  // Use the port that's currently active
+        
+      fetch(`${baseUrl}/api/process-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
