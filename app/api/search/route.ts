@@ -12,6 +12,25 @@ function filterValidDocuments(docs: any[]) {
   )
 }
 
+async function waitForDocumentCompletion(documentId: string, timeoutMs = 30000, intervalMs = 1000): Promise<any> {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    const { data: doc } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('id', documentId)
+      .single()
+
+    if (doc && doc.status === 'completed' && doc.preview_image_url && doc.content) {
+      return doc
+    }
+
+    await new Promise(resolve => setTimeout(resolve, intervalMs))
+  }
+
+  throw new Error('Timeout waiting for document processing')
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -48,14 +67,14 @@ export async function GET(request: Request) {
 
     // Process each result
     const processPromises = googleResults.map(async (result: any) => {
-      // Check if document already exists
+            // Check if document already exists
       const { data: existingDoc } = await supabase
         .from('documents')
         .select('*')
         .eq('url', result.link)
         .single()
 
-      // If document exists and is completed with content, return it
+        // If document exists and is completed with content, return it
       if (existingDoc && existingDoc.status === 'completed' &&
           existingDoc.content !== null &&
           existingDoc.preview_image_url !== null &&
@@ -83,12 +102,12 @@ export async function GET(request: Request) {
 
       if (error) throw error
 
-      // Start background processing
       const baseUrl = process.env.VERCEL_URL
         ? `https://${process.env.VERCEL_URL}`
-        : 'http://localhost:3001'  // Use the port that's currently active
+        : 'http://localhost:3001'
 
-      fetch(`${baseUrl}/api/process-pdf`, {
+      // Wait for the background processing API call to be queued
+      await fetch(`${baseUrl}/api/process-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -96,16 +115,14 @@ export async function GET(request: Request) {
           url: result.link,
           query
         })
-      }).catch(console.error) // Non-blocking
+      })
 
-      return doc
-    })
+      const completedDoc = await waitForDocumentCompletion(doc.id)
+      return completedDoc
+        })
 
     // Get initial results
     const allDocuments = await Promise.all(processPromises)
-
-    // For first search, allow pending documents
-    const validDocuments = filterValidDocuments(allDocuments)
 
     // Cache all documents (including invalid ones, they might be processed later)
     const expiresAt = new Date()
@@ -119,6 +136,8 @@ export async function GET(request: Request) {
         document_ids: allDocuments.map(doc => doc.id),
         expires_at: expiresAt.toISOString()
       })
+
+      const validDocuments = filterValidDocuments(allDocuments)
 
     // Return documents, including pending ones for first search
     return NextResponse.json({
