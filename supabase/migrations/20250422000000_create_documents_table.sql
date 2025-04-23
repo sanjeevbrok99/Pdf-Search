@@ -87,3 +87,7 @@ create trigger update_documents_updated_at
     before update on public.documents
     for each row
     execute function update_updated_at_column();
+
+-- Add unique constraint on url
+ALTER TABLE documents
+ADD CONSTRAINT unique_url UNIQUE (url);
