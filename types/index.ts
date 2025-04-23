@@ -12,6 +12,7 @@ export type Document = {
   error_message: string | null;
   created_at: string;
   updated_at: string;
+  pdf_url?: string; // URL to download the PDF file
 };
 
 export type RelevantPages = {

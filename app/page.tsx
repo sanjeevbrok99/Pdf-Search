@@ -1,19 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { SearchBar } from '@/components/SearchBar';
 import { SearchResults } from '@/components/SearchResults';
 import { GradeDropdown } from '@/components/GradeDropdown';
 import { SearchResult } from '@/types';
+
+const LOCAL_STORAGE_KEY = 'pdf-search-history';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : [];
+    }
+    return [];
+  });
 
-  const handleSearch = async (query: string) => {
+  const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) return;
 
     setIsLoading(true);
@@ -29,7 +37,11 @@ export default function Home() {
       if (response.ok) {
         setResults(data.documents);
         if (!searchHistory.includes(query)) {
-          setSearchHistory((prev) => [query, ...prev].slice(0, 5));
+          const newHistory = [query, ...searchHistory].slice(0, 5);
+          setSearchHistory(newHistory);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newHistory));
+          }
         }
       } else {
         console.error('Search failed:', data.error);
@@ -39,12 +51,19 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchHistory, selectedGrade]);
 
   const handleGradeChange = (grade: string | null) => {
     setSelectedGrade(grade);
     if (searchQuery) {
       handleSearch(searchQuery);
+    }
+  };
+
+  const handleHistoryUpdate = (newHistory: string[]) => {
+    setSearchHistory(newHistory);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newHistory));
     }
   };
 
@@ -59,21 +78,13 @@ export default function Home() {
               <SearchBar
                 value={searchQuery}
                 onChange={setSearchQuery}
+                onSearch={handleSearch}
                 placeholder="Search PDFs..."
                 history={searchHistory}
+                onHistoryUpdate={handleHistoryUpdate}
               />
             </div>
             <GradeDropdown value={selectedGrade} onChange={handleGradeChange} />
-          </div>
-
-          <div className="flex justify-end">
-            <button
-              onClick={() => handleSearch(searchQuery)}
-              disabled={!searchQuery.trim() || isLoading}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Searching...' : 'Search'}
-            </button>
           </div>
         </div>
 
