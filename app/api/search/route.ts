@@ -2,6 +2,16 @@ import { NextResponse } from 'next/server'
 import { supabase, searchGoogleForPDFs, getSearchResultsFromCache, saveSearchHistory } from '@/lib/supabase'
 import { ProcessingStatus, SearchResult } from '@/types'
 
+// Helper function to filter valid documents
+function filterValidDocuments(docs: any[]) {
+  return docs.filter(doc =>
+    doc.content !== null &&
+    doc.preview_image_url !== null &&
+    doc.error_message === null &&
+    doc.status === 'completed'
+  )
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const query = searchParams.get('q')
@@ -20,10 +30,14 @@ export async function GET(request: Request) {
     if (!skipCache) {
       const cachedResults = await getSearchResultsFromCache(query, gradeLevel || undefined)
       if (cachedResults) {
-        return NextResponse.json({
-          documents: cachedResults,
-          fromCache: true
-        })
+        // Filter out invalid documents from cache
+        const validCachedDocs = filterValidDocuments(cachedResults)
+        if (validCachedDocs.length > 0) {
+          return NextResponse.json({
+            documents: validCachedDocs,
+            fromCache: true
+          })
+        }
       }
     }
 
@@ -39,18 +53,25 @@ export async function GET(request: Request) {
         .eq('url', result.link)
         .single()
 
-      if (existingDoc) {
+      // If document exists and is valid, return it
+      if (existingDoc && existingDoc.content !== null && existingDoc.preview_image_url !== null && !existingDoc.error_message) {
         return existingDoc
       }
 
-      // Create new document
-      const { data: newDoc, error } = await supabase
+      // Create or update document
+      const { data: doc, error } = await supabase
         .from('documents')
-        .insert({
+        .upsert({
           url: result.link,
           title: result.title,
           status: 'pending' as ProcessingStatus,
-          grade_level: gradeLevel || null
+          grade_level: gradeLevel || null,
+          content: null,
+          preview_image_url: null,
+          error_message: null,
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'url'
         })
         .select()
         .single()
@@ -66,19 +87,22 @@ export async function GET(request: Request) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          documentId: newDoc.id,
+          documentId: doc.id,
           url: result.link,
           query
         })
       }).catch(console.error) // Non-blocking
 
-      return newDoc
+      return doc
     })
 
     // Get initial results
-    const initialDocuments = await Promise.all(processPromises)
+    const allDocuments = await Promise.all(processPromises)
 
-    // Cache the results
+    // Filter out invalid documents
+    const validDocuments = filterValidDocuments(allDocuments)
+
+    // Cache all documents (including invalid ones, they might be processed later)
     const expiresAt = new Date()
     expiresAt.setSeconds(expiresAt.getSeconds() + Number(process.env.SEARCH_CACHE_DURATION || 3600))
 
@@ -87,12 +111,13 @@ export async function GET(request: Request) {
       .insert({
         query,
         grade_level: gradeLevel || null,
-        document_ids: initialDocuments.map(doc => doc.id),
+        document_ids: allDocuments.map(doc => doc.id),
         expires_at: expiresAt.toISOString()
       })
 
+    // Only return valid documents to the user
     return NextResponse.json({
-      documents: initialDocuments,
+      documents: validDocuments,
       fromCache: false
     })
   } catch (error) {

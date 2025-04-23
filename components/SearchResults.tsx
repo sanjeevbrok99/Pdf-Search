@@ -1,5 +1,5 @@
 import type { SearchResult as SearchResultType } from '@/types';
-import { Printer } from 'lucide-react';
+import { Printer, ExternalLink } from 'lucide-react';
 import { useState } from 'react';
 
 // PagesPill component
@@ -40,33 +40,52 @@ const SearchResultItem = ({
   total_pages,
   relevantPages,
   grade_level,
-  pdf_url 
+  pdf_url,
+  url 
 }: SearchResultType) => {
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [isPrinting, setPrinting] = useState(false);
 
   const handlePrint = async () => {
-    if (!pdf_url) return;
+    if (!pdf_url && !url) return;
     
+    setPrinting(true);
     try {
-      const response = await fetch(pdf_url);
+      const pdfUrl = pdf_url || url;
+      const response = await fetch(pdfUrl);
+      if (!response.ok) throw new Error('Failed to fetch PDF');
+      
       const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const printWindow = window.open(url);
+      const objectUrl = window.URL.createObjectURL(blob);
+      const printWindow = window.open(objectUrl);
       
       if (printWindow) {
         printWindow.onload = () => {
           printWindow.print();
-          window.URL.revokeObjectURL(url);
+          setTimeout(() => {
+            window.URL.revokeObjectURL(objectUrl);
+          }, 100);
         };
       }
     } catch (error) {
       console.error('Error printing PDF:', error);
+      alert('Failed to print PDF. Please try again.');
+    } finally {
+      setPrinting(false);
     }
+  };
+
+  const handleClick = () => {
+    if (!pdf_url && !url) return;
+    window.open(pdf_url || url, '_blank');
   };
 
   return (
     <div className="flex flex-col sm:flex-row border rounded-lg overflow-hidden mb-4 bg-white hover:shadow-lg transition-shadow duration-200">
-      <div className="w-full sm:w-1/4 relative bg-gray-100">
+      <div 
+        onClick={handleClick}
+        className="w-full sm:w-1/4 relative bg-gray-100 cursor-pointer"
+      >
         {!imageLoaded && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -82,15 +101,24 @@ const SearchResultItem = ({
       </div>
       <div className="w-full sm:w-3/4 p-4">
         <div className="flex justify-between items-start mb-2">
-          <div>
-            <h3 className="text-lg font-semibold">{title}</h3>
+          <div className="flex-1">
+            <button
+              onClick={handleClick}
+              className="text-lg font-semibold text-left hover:text-blue-600 transition-colors duration-200 flex items-center gap-2"
+            >
+              {title}
+              <ExternalLink className="w-4 h-4" />
+            </button>
             {grade_level && (
-              <span className="text-sm text-gray-500">Grade {grade_level}</span>
+              <span className="text-sm text-gray-500 block mt-1">Grade {grade_level}</span>
             )}
           </div>
           <button
             onClick={handlePrint}
-            className="p-2 text-gray-600 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors duration-200"
+            disabled={isPrinting}
+            className={`p-2 text-gray-600 hover:text-blue-600 hover:bg-gray-100 rounded-full transition-colors duration-200 ${
+              isPrinting ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
             title="Print PDF"
           >
             <Printer className="w-5 h-5" />

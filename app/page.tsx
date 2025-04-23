@@ -1,25 +1,34 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { SearchBar } from '@/components/SearchBar';
 import { SearchResults } from '@/components/SearchResults';
 import { GradeDropdown } from '@/components/GradeDropdown';
 import { SearchResult } from '@/types';
-
-const LOCAL_STORAGE_KEY = 'pdf-search-history';
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [searchHistory, setSearchHistory] = useState<string[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+
+  // Fetch search history from the database
+  const fetchSearchHistory = async () => {
+    try {
+      const response = await fetch('/api/search-history');
+      if (response.ok) {
+        const data = await response.json();
+        setSearchHistory(data.history.map((item: { query: string }) => item.query));
+      }
+    } catch (error) {
+      console.error('Failed to fetch search history:', error);
     }
-    return [];
-  });
+  };
+
+  useEffect(() => {
+    fetchSearchHistory();
+  }, []);
 
   const handleSearch = useCallback(async (query: string) => {
     if (!query.trim()) return;
@@ -36,13 +45,8 @@ export default function Home() {
 
       if (response.ok) {
         setResults(data.documents);
-        if (!searchHistory.includes(query)) {
-          const newHistory = [query, ...searchHistory].slice(0, 5);
-          setSearchHistory(newHistory);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newHistory));
-          }
-        }
+        // Fetch updated history after search
+        fetchSearchHistory();
       } else {
         console.error('Search failed:', data.error);
       }
@@ -51,7 +55,7 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, [searchHistory, selectedGrade]);
+  }, [selectedGrade]);
 
   const handleGradeChange = (grade: string | null) => {
     setSelectedGrade(grade);
@@ -60,10 +64,19 @@ export default function Home() {
     }
   };
 
-  const handleHistoryUpdate = (newHistory: string[]) => {
-    setSearchHistory(newHistory);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newHistory));
+  const handleHistoryUpdate = async (newHistory: string[]) => {
+    try {
+      const response = await fetch('/api/search-history', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: newHistory[0] })
+      });
+      
+      if (response.ok) {
+        fetchSearchHistory();
+      }
+    } catch (error) {
+      console.error('Failed to update search history:', error);
     }
   };
 
