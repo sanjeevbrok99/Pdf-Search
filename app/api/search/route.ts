@@ -13,24 +13,26 @@ function filterValidDocuments(docs: any[]) {
 }
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url)
-  const query = searchParams.get('q')
-  const gradeLevel = searchParams.get('grade')
-  const skipCache = searchParams.get('skipCache') === 'true'
-
-  if (!query) {
-    return NextResponse.json({ error: 'Query parameter is required' }, { status: 400 })
-  }
-
   try {
+    const { searchParams } = new URL(request.url)
+    const query = searchParams.get('q')
+    const gradeLevel = searchParams.get('grade')
+    const timestamp = searchParams.get('timestamp')
+    const skipCache = searchParams.get('skipCache') === 'true'
+
+    if (!query) {
+      return NextResponse.json({ error: 'Query parameter is required' }, { status: 400 })
+    }
+
     // Save search to history
     await saveSearchHistory(query, gradeLevel || undefined)
 
-    // Check cache first
-    if (!skipCache) {
+    // Only check cache if no timestamp is provided
+    if (!timestamp && !skipCache) {
+      // Check cache first
       const cachedResults = await getSearchResultsFromCache(query, gradeLevel || undefined)
       if (cachedResults) {
-        // Filter out invalid documents from cache
+        // For cached results, only show completed documents
         const validCachedDocs = filterValidDocuments(cachedResults)
         if (validCachedDocs.length > 0) {
           return NextResponse.json({
@@ -53,8 +55,11 @@ export async function GET(request: Request) {
         .eq('url', result.link)
         .single()
 
-      // If document exists and is valid, return it
-      if (existingDoc && existingDoc.content !== null && existingDoc.preview_image_url !== null && !existingDoc.error_message) {
+      // If document exists and is completed with content, return it
+      if (existingDoc && existingDoc.status === 'completed' &&
+          existingDoc.content !== null &&
+          existingDoc.preview_image_url !== null &&
+          !existingDoc.error_message) {
         return existingDoc
       }
 
@@ -99,7 +104,7 @@ export async function GET(request: Request) {
     // Get initial results
     const allDocuments = await Promise.all(processPromises)
 
-    // Filter out invalid documents
+    // For first search, allow pending documents
     const validDocuments = filterValidDocuments(allDocuments)
 
     // Cache all documents (including invalid ones, they might be processed later)
@@ -115,7 +120,7 @@ export async function GET(request: Request) {
         expires_at: expiresAt.toISOString()
       })
 
-    // Only return valid documents to the user
+    // Return documents, including pending ones for first search
     return NextResponse.json({
       documents: validDocuments,
       fromCache: false
