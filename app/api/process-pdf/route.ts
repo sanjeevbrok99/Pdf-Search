@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server'
 import { supabase, updateDocumentStatus } from '@/lib/supabase'
 import pdfParse from 'pdf-parse/lib/pdf-parse.js'
-import { fromBuffer } from 'pdf2pic'
 import path from 'path'
 import fs from 'fs/promises'
 import { v4 as uuidv4 } from 'uuid'
+import puppeteer from 'puppeteer';
+
 // Download PDF from URL and return as ArrayBuffer
 async function downloadPDF(url: string): Promise<ArrayBuffer> {
   const response = await fetch(url)
@@ -34,49 +35,52 @@ async function extractPageContent(buffer: Buffer): Promise<{
 
 // Placeholder preview image URL generator
 
-async function generatePreviewImage(buffer: Buffer): Promise<string> {
-  const filename = `preview-${uuidv4()}.png`
-  const tmpDir = '/tmp'
-  const outputPath = path.join(tmpDir, filename)
+export const generatePreviewImage = async (pdfBuffer: Buffer): Promise<string> => {
+  const id = uuidv4();
+  const tmpPdfPath = path.join('/tmp', `preview-${id}.pdf`);
+  const tmpImagePath = tmpPdfPath.replace('.pdf', '.jpg');
 
-  // Ensure /tmp directory exists
-  try {
-    await fs.access(tmpDir)
-  } catch {
-    await fs.mkdir(tmpDir, { recursive: true })
-  }
+  // Save PDF buffer to temp file
+  await fs.writeFile(tmpPdfPath, pdfBuffer);
 
-  const converter = fromBuffer(buffer, {
-    density: 100,
-    saveFilename: filename,
-    savePath: tmpDir,
-    format: 'png',
-    width: 600,
-    height: 800,
-  })
+  // Launch Puppeteer
+  const browser = await puppeteer.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
 
-  // Convert first page to image
-  await converter(1)
+  const page = await browser.newPage();
 
-  // Verify the file exists before trying to read it
-  await fs.access(outputPath)
+  // Load PDF as file
+  await page.goto(`file://${tmpPdfPath}`, {
+    waitUntil: 'networkidle0',
+  });
 
-  // Upload the image to Supabase Storage
-  const fileData = await fs.readFile(outputPath)
+  // Take a screenshot
+  const imageBuffer = await page.screenshot({
+    fullPage: true,
+    type: 'jpeg',
+    quality: 80,
+  });
 
-  const { data, error } = await supabase.storage
+  await browser.close();
+
+  // Upload to Supabase
+  const { error } = await supabase.storage
     .from('image-previews')
-    .upload(filename, fileData, {
-      contentType: 'image/png',
+    .upload(`preview-${id}.jpg`, imageBuffer, {
+      contentType: 'image/jpeg',
       upsert: true,
-    })
+    });
 
-  if (error) throw error
+  if (error) throw error;
 
-  const publicURL = supabase.storage.from('image-previews').getPublicUrl(filename).data.publicUrl
+  const { data } = supabase.storage
+    .from('image-previews')
+    .getPublicUrl(`preview-${id}.jpg`);
 
-  return publicURL
-}
+  return data.publicUrl;
+};
 
 // Simple relevance calculation based on query terms frequency
 async function findRelevantPages(
