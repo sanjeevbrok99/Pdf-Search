@@ -9,27 +9,6 @@ const server = process.env.DOC_READER_SERVER;
 const accessToken = process.env.DOC_READER_TOKEN;
 import axios from 'axios'
 
-export const  downloadPDF =  async(url: string): Promise<Buffer> =>{
-  try {
-    const response = await axios.get(url, {
-      responseType: 'arraybuffer',
-      timeout: 15000,
-      headers: {
-        'Accept': 'application/pdf'
-      }
-    })
-
-    if (response.status !== 200) {
-      throw new Error(`Failed to download PDF. Status: ${response.status}`)
-    }
-
-    return Buffer.from(response.data)
-  } catch (error: any) {
-    console.error('Error downloading PDF:', url, error.message)
-    throw new Error('Failed to download PDF')
-  }
-}
-
 // Download PDF from URL and return as ArrayBuffer
 async function sendDocForProcessing(url: string, documentId: string) {
   await fetch(`${server}/doc/process`, {
@@ -115,7 +94,6 @@ export const askQuestionFromDocReader  = async(documentId: string, query: string
 
   const startPageMatch = responseText.match(/Start page:\s*(\d+)/i);
   const endPageMatch = responseText.match(/End page:\s*(\d+)/i);
-  const relevanceScoreMatch = responseText.match(/Relevance score:\s*(\d+(\.\d+)?)/i);
 
   const startPage = startPageMatch ? parseInt(startPageMatch[1], 10) : 1;
   const endPage = endPageMatch ? parseInt(endPageMatch[1], 10) : 5;
@@ -188,11 +166,11 @@ export async function POST(request: Request) {
 
       // Step 1: Send PDF URL to Doc Reader Service
       await sendDocForProcessing(url, documentId) // function to call POST /doc/process
+      const previewPromise = generatePreviewImage(url)
 
       // Step 2: Poll Doc Reader to check if processing is done
       // await waitForDocProcessing(documentId) // function to call POST /doc/index-status
-
-      const previewImageUrl = await generatePreviewImage(url);
+      const previewImageUrl = await previewPromise;
 
       // Step 3: Ask question using Doc Reader Service
       const answer = await askQuestionFromDocReader(documentId, query)

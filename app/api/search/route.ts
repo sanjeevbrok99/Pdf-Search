@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { supabase, searchGoogleForPDFs, getSearchResultsFromCache, saveSearchHistory } from '@/lib/supabase'
 import { ProcessingStatus, SearchResult } from '@/types'
-import { downloadPDF, extractPageContent } from '../process-pdf/route'
+import { extractPageContent } from '../process-pdf/route'
+import axios from 'axios'
 
 // Helper function to filter valid documents
 function filterValidDocuments(docs: any[]) {
@@ -10,8 +11,44 @@ function filterValidDocuments(docs: any[]) {
     doc.status === 'completed'
   )
 }
+async function validatePDFUrl(url: string): Promise<boolean> {
+  try {
+    const response = await axios.head(url, {
+      timeout: 3000,
+      headers: {
+        'Accept': 'application/pdf'
+      },
+      maxRedirects: 3
+    })
 
-async function waitForDocumentCompletion(documentId: string, timeoutMs = 130000, intervalMs = 1000): Promise<any> {
+    const contentType = response.headers['content-type']
+    return contentType && contentType.includes('application/pdf')
+  } catch (error) {
+    console.error('Validation failed for URL:', url, error)
+    return false
+  }
+}
+export const  downloadPDF =  async(url: string): Promise<Buffer> =>{
+  try {
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
+      timeout: 15000,
+      headers: {
+        'Accept': 'application/pdf'
+      }
+    })
+
+    if (response.status !== 200) {
+      throw new Error(`Failed to download PDF. Status: ${response.status}`)
+    }
+
+    return Buffer.from(response.data)
+  } catch (error: any) {
+    console.error('Error downloading PDF:', url, error.message)
+    throw new Error('Failed to download PDF')
+  }
+}
+async function waitForDocumentCompletion(documentId: string, timeoutMs = 130000, intervalMs = 3000): Promise<any> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     const { data: doc } = await supabase
@@ -42,15 +79,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Query parameter is required' }, { status: 400 })
     }
 
-    // Save search to history
     await saveSearchHistory(query, gradeLevel || undefined)
 
-    // Only check cache if no timestamp is provided
     if (!timestamp && !skipCache) {
-      // Check cache first
       const cachedResults = await getSearchResultsFromCache(query, gradeLevel || undefined)
       if (cachedResults) {
-        // For cached results, only show completed documents
         const validCachedDocs = filterValidDocuments(cachedResults)
         if (validCachedDocs.length > 0) {
           return NextResponse.json({
@@ -61,33 +94,64 @@ export async function GET(request: Request) {
       }
     }
 
-    // Start Google Search
+    // Step 1: Google Search
     const googleResults = await searchGoogleForPDFs(query, gradeLevel || undefined)
 
-    // Process each result
-    const processPromises = googleResults.map(async (result: any) => {
-      try {
-        // Step 1: Try to download PDF first
-        const pdfBuffer = Buffer.from(await downloadPDF(result.link))
+    // Step 2: Validate all PDFs in parallel
+    const validatedResults = await Promise.all(
+      googleResults.map(async (result: any) => {
+        const isValidPDF = await validatePDFUrl(result.link)
+        if (isValidPDF) return result
+        console.warn(`Skipping invalid PDF URL: ${result.link}`)
+        return null
+      })
+    )
 
-        // Step 2: Try to extract page content
-        const { content, totalPages } = await extractPageContent(pdfBuffer)
+    const validPDFs = validatedResults.filter(Boolean)
 
-        if (!content || content.length === 0) {
-          console.warn('Empty content from PDF:', result.link)
-          return null // skip this document
+    // Step 3: Download all PDFs and extract content in parallel
+    const processedPDFs = await Promise.all(
+      validPDFs.map(async (result: any) => {
+        try {
+          const pdfBuffer = await downloadPDF(result.link)
+          const { content, totalPages } = await extractPageContent(pdfBuffer)
+
+          if (!content || content.length === 0) {
+            console.warn('Empty content from PDF:', result.link)
+            return null
+          }
+
+          return {
+            link: result.link,
+            title: result.title,
+            content,
+            totalPages
+          }
+        } catch (error) {
+          console.error('Error processing PDF:', result.link, error)
+          return null
         }
+      })
+    )
 
-        // Step 3: Now safe to save to DB
+    const readyPDFs = processedPDFs.filter(Boolean)
+
+    if (readyPDFs.length === 0) {
+      return NextResponse.json({ documents: [], fromCache: false })
+    }
+
+    // Step 4: Save all PDFs into DB in parallel
+    const savedDocuments = await Promise.all(
+      readyPDFs.map(async (pdf: any) => {
         const { data: doc, error } = await supabase
           .from('documents')
           .upsert({
-            url: result.link,
-            title: result.title,
+            url: pdf.link,
+            title: pdf.title,
             status: 'pending' as ProcessingStatus,
             grade_level: gradeLevel || null,
-            content:content ,
-            total_pages: totalPages,
+            content: pdf.content,
+            total_pages: pdf.totalPages,
             preview_image_url: null,
             error_message: null,
             updated_at: new Date().toISOString()
@@ -97,36 +161,49 @@ export async function GET(request: Request) {
           .select()
           .single()
 
-        if (error) throw error
+        if (error) {
+          console.error('Failed to save document:', pdf.link, error)
+          return null
+        }
 
-        const baseUrl = process.env.VERCEL_URL
-          ? `https://${process.env.VERCEL_URL}`
-          : 'http://localhost:3001'
+        return doc
+      })
+    )
 
-        // Step 4: Call process-pdf API
-        await fetch(`${baseUrl}/api/process-pdf`, {
+    const docsToProcess = savedDocuments.filter(Boolean)
+
+    // Step 5: Fire all /api/process-pdf calls in parallel
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3001'
+
+    await Promise.all(
+      docsToProcess.map(doc => {
+        return fetch(`${baseUrl}/api/process-pdf`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             documentId: doc.id,
-            url: result.link,
+            url: doc.url,
             query
           })
+        }).catch(error => {
+          console.error('Failed to process PDF:', doc.url, error)
         })
+      })
+    )
 
-        // Step 5: Wait for document completion
-        const completedDoc = await waitForDocumentCompletion(doc.id)
-        return completedDoc
-      } catch (error) {
-        console.error('Skipping invalid PDF link:', result.link, error)
-        return null // Skip invalid/broken pdfs
-      }
-    })
+    // Step 6: Wait for document processing completion in parallel
+    const completedDocs = await Promise.all(
+      docsToProcess.map(doc => waitForDocumentCompletion(doc.id).catch(err => {
+        console.error('Timeout processing doc:', doc.url)
+        return null
+      }))
+    )
 
-    // Finally, after Promise.all
-    const allDocuments = (await Promise.all(processPromises)).filter(Boolean)
+    const finalDocuments = completedDocs.filter(Boolean)
 
-    // Cache all documents (including invalid ones, they might be processed later)
+    // Step 7: Cache the search results
     const expiresAt = new Date()
     expiresAt.setSeconds(expiresAt.getSeconds() + Number(process.env.SEARCH_CACHE_DURATION || 3600))
 
@@ -135,13 +212,12 @@ export async function GET(request: Request) {
       .insert({
         query,
         grade_level: gradeLevel || null,
-        document_ids: allDocuments.map(doc => doc.id),
+        document_ids: finalDocuments.map(doc => doc.id),
         expires_at: expiresAt.toISOString()
       })
 
-    // Return documents, including pending ones for first search
     return NextResponse.json({
-      documents: allDocuments,
+      documents: finalDocuments,
       fromCache: false
     })
   } catch (error) {
