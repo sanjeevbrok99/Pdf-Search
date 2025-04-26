@@ -198,28 +198,19 @@ export async function POST(request: Request) {
       const previewImageUrl = await generatePreviewImage(url);
 
       // Step 3: Ask question using Doc Reader Service
-      const answer = await askQuestionFromDocReader(documentId, query) // function to call POST /doc/qna
+      const answer = await askQuestionFromDocReader(documentId, query)
 
       // Step 4: Update document details into your database
       await supabase
-        .from('documents')
-        .update({
-          preview_image_url: previewImageUrl,
-          status: 'completed',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', documentId)
-
-      // Step 5: Save relevant page info (from answer)
-      await supabase
-        .from('relevant_pages')
-        .insert({
-          document_id: documentId,
-          query,
-          start_page: answer.startPage,
-          end_page: answer.endPage,
-          relevance_score: answer.relevanceScore
-        })
+      .from('documents')
+      .update({
+        preview_image_url: previewImageUrl,
+        status: 'completed',
+        updated_at: new Date().toISOString(),
+        start_page: answer.startPage,
+        end_page: answer.endPage
+      })
+      .eq('id', documentId)
 
       return NextResponse.json({ success: true })
 

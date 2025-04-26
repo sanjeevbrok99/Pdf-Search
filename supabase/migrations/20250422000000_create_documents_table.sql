@@ -91,3 +91,7 @@ create trigger update_documents_updated_at
 -- Add unique constraint on url
 ALTER TABLE documents
 ADD CONSTRAINT unique_url UNIQUE (url);
+
+ALTER TABLE documents
+ADD COLUMN start_page INTEGER,
+ADD COLUMN end_page INTEGER,
