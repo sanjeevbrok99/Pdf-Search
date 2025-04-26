@@ -12,8 +12,8 @@ import axios from 'axios'
 export const  downloadPDF =  async(url: string): Promise<Buffer> =>{
   try {
     const response = await axios.get(url, {
-      responseType: 'arraybuffer', // this is KEY for PDFs
-      timeout: 15000, // 15 seconds timeout (you can adjust)
+      responseType: 'arraybuffer',
+      timeout: 15000,
       headers: {
         'Accept': 'application/pdf'
       }
@@ -104,7 +104,7 @@ export const askQuestionFromDocReader  = async(documentId: string, query: string
       `,
       settings: {
         max_tokens: 1000,
-        temperature: 0.2, // lower temp = more accurate
+        temperature: 0.2,
         model_name: "gpt-3.5-turbo-16k",
         verbose: true
       }
@@ -113,19 +113,16 @@ export const askQuestionFromDocReader  = async(documentId: string, query: string
   const data = await res.json()
   const responseText = data[0]?.result?.response ?? '';
 
-  // Parse Start Page, End Page, and Relevance Score manually
   const startPageMatch = responseText.match(/Start page:\s*(\d+)/i);
   const endPageMatch = responseText.match(/End page:\s*(\d+)/i);
   const relevanceScoreMatch = responseText.match(/Relevance score:\s*(\d+(\.\d+)?)/i);
 
   const startPage = startPageMatch ? parseInt(startPageMatch[1], 10) : 1;
   const endPage = endPageMatch ? parseInt(endPageMatch[1], 10) : 5;
-  const relevanceScore = relevanceScoreMatch ? parseFloat(relevanceScoreMatch[1]) : 1;
 
   return {
     startPage,
-    endPage,
-    relevanceScore
+    endPage
   };
 }
 

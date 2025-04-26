@@ -94,4 +94,4 @@ ADD CONSTRAINT unique_url UNIQUE (url);
 
 ALTER TABLE documents
 ADD COLUMN start_page INTEGER,
-ADD COLUMN end_page INTEGER,
+ADD COLUMN end_page INTEGER
