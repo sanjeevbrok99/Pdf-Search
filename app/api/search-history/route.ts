@@ -1,19 +1,16 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-
-export async function GET() {
+import redis from '@/lib/redis';
+export async function GET(request: Request) {
   try {
-    const { data: history, error } = await supabase
-      .from('search_history')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(5);
+    const searchHistoryRaw = await redis.lrange('search', 0, 9);
 
-    if (error) throw error;
+    // Parse the JSON strings into objects
+    const searchHistory = searchHistoryRaw.map(entry => JSON.parse(entry));
 
-    return NextResponse.json({ history: history || [] });
+    return NextResponse.json({ history: searchHistory });
   } catch (error) {
-    console.error('Error fetching search history:', error);
+    console.error('Failed to fetch search history:', error);
     return NextResponse.json({ error: 'Failed to fetch search history' }, { status: 500 });
   }
 }

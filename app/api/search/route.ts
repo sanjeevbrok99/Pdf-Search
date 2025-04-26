@@ -3,6 +3,7 @@ import { supabase, searchGoogleForPDFs, getSearchResultsFromCache, saveSearchHis
 import { ProcessingStatus, SearchResult } from '@/types'
 import { extractPageContent } from '../process-pdf/route'
 import axios from 'axios'
+import redis from '@/lib/redis';
 
 // Helper function to filter valid documents
 function filterValidDocuments(docs: any[]) {
@@ -81,16 +82,24 @@ export async function GET(request: Request) {
 
     await saveSearchHistory(query, gradeLevel || undefined)
 
-    if (!timestamp && !skipCache) {
-      const cachedResults = await getSearchResultsFromCache(query, gradeLevel || undefined)
+    const searchHistory = JSON.stringify({
+      query: query,
+      created_at: new Date().toISOString()
+    });
+
+    // Push the search history object to the Redis list
+    await redis.lpush('search-history', searchHistory);
+
+    const cacheKey = `search:${query}:${gradeLevel || 'all'}`;
+
+     if (!skipCache) {
+      const cachedResults = await redis.get(cacheKey);
       if (cachedResults) {
-        const validCachedDocs = filterValidDocuments(cachedResults)
-        if (validCachedDocs.length > 0) {
-          return NextResponse.json({
-            documents: validCachedDocs,
-            fromCache: true
-          })
-        }
+        // Return cached results if found
+        return NextResponse.json({
+          documents: JSON.parse(cachedResults),
+          fromCache: true
+        });
       }
     }
 
@@ -139,6 +148,10 @@ export async function GET(request: Request) {
     if (readyPDFs.length === 0) {
       return NextResponse.json({ documents: [], fromCache: false })
     }
+
+    const cacheDuration = 3600; // Cache for 1 hour by default
+    await redis.rpush(cacheKey, JSON.stringify(readyPDFs));
+    await redis.expire(cacheKey, cacheDuration);
 
     // Step 4: Save all PDFs into DB in parallel
     const savedDocuments = await Promise.all(
@@ -204,17 +217,17 @@ export async function GET(request: Request) {
     const finalDocuments = completedDocs.filter(Boolean)
 
     // Step 7: Cache the search results
-    const expiresAt = new Date()
-    expiresAt.setSeconds(expiresAt.getSeconds() + Number(process.env.SEARCH_CACHE_DURATION || 3600))
+    // const expiresAt = new Date()
+    // expiresAt.setSeconds(expiresAt.getSeconds() + Number(process.env.SEARCH_CACHE_DURATION || 3600))
 
-    await supabase
-      .from('search_results_cache')
-      .insert({
-        query,
-        grade_level: gradeLevel || null,
-        document_ids: finalDocuments.map(doc => doc.id),
-        expires_at: expiresAt.toISOString()
-      })
+    // await supabase
+    //   .from('search_results_cache')
+    //   .insert({
+    //     query,
+    //     grade_level: gradeLevel || null,
+    //     document_ids: finalDocuments.map(doc => doc.id),
+    //     expires_at: expiresAt.toISOString()
+    //   })
 
     return NextResponse.json({
       documents: finalDocuments,

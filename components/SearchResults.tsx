@@ -1,6 +1,6 @@
 import type { SearchResult as SearchResultType } from '@/types';
 import { Printer, ExternalLink } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 // PagesPill component
 const PagesPill = ({ totalPages }: { totalPages?: number }) => {
@@ -14,8 +14,23 @@ const PagesPill = ({ totalPages }: { totalPages?: number }) => {
 
 // RelevancyInfo component
 const RelevancyInfo = ({ totalPages, relevantPages }: { totalPages?: number; relevantPages?: { startPage: number; endPage: number } }) => {
-  if (!totalPages || !relevantPages) return null;
-
+  if (!totalPages ) return null;
+  if (!relevantPages) {
+    return (
+      <div className="flex items-center gap-1 text-sm text-gray-500 mt-2">
+        <div className="w-3 h-3 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+        <span>Checking relevancy...</span>
+      </div>
+    );
+  }
+  // const range = relevantPages.endPage - relevantPages.startPage + 1;
+  // if (range === totalPages) {
+  //   return (
+  //     <div className="text-sm text-gray-500 mt-2">
+  //       All pages are relevant
+  //     </div>
+  //   );
+  // }
   const range = relevantPages.endPage - relevantPages.startPage + 1;
   if (range === totalPages) {
     return (
@@ -27,38 +42,42 @@ const RelevancyInfo = ({ totalPages, relevantPages }: { totalPages?: number; rel
 
   return (
     <div className="text-sm text-gray-500 mt-2">
-      Pages {relevantPages.startPage}-{relevantPages.endPage} are most relevant
+     {range} relevant pages from page {relevantPages.startPage}-{relevantPages.endPage}
     </div>
   );
 };
 
 // Individual search result component
-const SearchResultItem = ({ 
-  title, 
-  content, 
+const SearchResultItem = ({
+  title,
+  content,
   preview_image_url,
   total_pages,
-  relevantPages,
+  end_page,
+  start_page,
   grade_level,
   pdf_url,
-  url 
+  url
 }: SearchResultType) => {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isPrinting, setPrinting] = useState(false);
-
+  const [relevantPages, setRelevantPages] = useState<{
+    startPage: number;
+    endPage: number;
+  } | undefined>(undefined);
   const handlePrint = async () => {
     if (!pdf_url && !url) return;
-    
+
     setPrinting(true);
     try {
       const pdfUrl = pdf_url || url;
       const response = await fetch(pdfUrl);
       if (!response.ok) throw new Error('Failed to fetch PDF');
-      
+
       const blob = await response.blob();
       const objectUrl = window.URL.createObjectURL(blob);
       const printWindow = window.open(objectUrl);
-      
+
       if (printWindow) {
         printWindow.onload = () => {
           printWindow.print();
@@ -79,10 +98,25 @@ const SearchResultItem = ({
     if (!pdf_url && !url) return;
     window.open(pdf_url || url, '_blank');
   };
+  useEffect(() => {
+    if (start_page !== undefined && end_page !== undefined) {
+      // First, show "Checking relevancy..."
+      setRelevantPages(undefined);
 
+      const timer = setTimeout(() => {
+        // After 2 seconds, show the relevant pages
+        setRelevantPages({
+          startPage: start_page,
+          endPage: end_page,
+        });
+      }, 2000);
+
+      return () => clearTimeout(timer); // Clean up timer if component unmounts
+    }
+  }, [start_page, end_page]);
   return (
     <div className="flex flex-col sm:flex-row border rounded-lg overflow-hidden mb-4 bg-white hover:shadow-lg transition-shadow duration-200">
-      <div 
+      <div
         onClick={handleClick}
         className="w-full sm:w-1/4 relative bg-gray-100 cursor-pointer"
       >
@@ -125,12 +159,13 @@ const SearchResultItem = ({
           </button>
         </div>
         <p className="text-gray-600 mb-4 line-clamp-3">{content}</p>
-        <RelevancyInfo 
-          totalPages={total_pages || undefined} 
-          relevantPages={relevantPages ? {
-            startPage: relevantPages.start_page,
-            endPage: relevantPages.end_page
-          } : undefined}
+        <p className="text-gray-600 mb-4 text-xs line-clamp-3">
+
+        </p>
+
+        <RelevancyInfo
+          totalPages={total_pages || undefined}
+          relevantPages={relevantPages}
         />
       </div>
     </div>
@@ -150,7 +185,7 @@ export function SearchResults({ results }: { results: SearchResultType[] }) {
   return (
     <div className="space-y-4">
       {results.map((result) => (
-        <SearchResultItem key={result.id} {...result} />
+        <SearchResultItem key={result.id}  {...result}   />
       ))}
     </div>
   );

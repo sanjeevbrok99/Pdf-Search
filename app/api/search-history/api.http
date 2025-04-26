@@ -1,0 +1,7 @@
+@server =  http://localhost:3001
+
+###
+# @name  search
+
+GET {{server}}/api/search-history
+Content-Type: application/json
