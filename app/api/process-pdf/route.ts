@@ -65,7 +65,7 @@ export const extractPageContent =  async(buffer: Buffer): Promise<{
 //   if (!isReady) throw new Error('Doc processing timeout')
 // }
 
-export const askQuestionFromDocReader  = async(documentId: string, query: string) => {
+export const askQuestionFromDocReader = async (documentId: string, query: string) => {
   const res = await fetch(`${server}/doc/qna`, {
     method: 'POST',
     headers: {
@@ -75,34 +75,48 @@ export const askQuestionFromDocReader  = async(documentId: string, query: string
     body: JSON.stringify({
       index_names: [`doc_${documentId}`],
       q: `
-        You are a smart document search assistant.
-        Given the user's query: "${query}", and the document's extracted text,
-        your task is to find the pages that are most relevant to the query.
-        Respond ONLY with the start page, end page, and a relevance score between 0 and 1.
-        Be concise and accurate.
+        You are an intelligent document search assistant.
+        Given the user's query: "${query}" and the indexed document text across all pages,
+        your task is to carefully search across all the pages and find the most relevant start page and end page.
+
+        Instructions:
+        - Respond ONLY in the following exact format:
+          Start page: [number]
+          End page: [number]
+        - Do not include any explanation, comments, or extra text.
+        - If the answer is found on a single page, Start page and End page must be the same.
+        - Always ensure the start page number is less than or equal to the end page number.
+        - If you cannot find the answer, return Start page: 1 and End page: 1.
       `,
       settings: {
-        max_tokens: 1000,
+        max_tokens: 500,
         temperature: 0.2,
         model_name: "gpt-3.5-turbo-16k",
-        verbose: true
+        verbose: false
       }
     })
-  })
-  const data = await res.json()
+  });
+
+  const data = await res.json();
   const responseText = data[0]?.result?.response ?? '';
 
+  // Safely extract start and end page
   const startPageMatch = responseText.match(/Start page:\s*(\d+)/i);
   const endPageMatch = responseText.match(/End page:\s*(\d+)/i);
 
-  const startPage = startPageMatch ? parseInt(startPageMatch[1], 10) : 1;
-  const endPage = endPageMatch ? parseInt(endPageMatch[1], 10) : 5;
+  let startPage = startPageMatch ? parseInt(startPageMatch[1], 10) : 1;
+  let endPage = endPageMatch ? parseInt(endPageMatch[1], 10) : startPage; // fallback: endPage = startPage if missing
+
+  // Ensure startPage <= endPage
+  if (startPage > endPage) {
+    [startPage, endPage] = [endPage, startPage]; // swap if needed
+  }
 
   return {
     startPage,
     endPage
   };
-}
+};
 
 // Placeholder preview image URL generator
 
