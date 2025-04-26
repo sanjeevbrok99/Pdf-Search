@@ -35,7 +35,6 @@ export async function getSearchResultsFromCache(query: string, grade?: string): 
     .from('search_results_cache')
     .select('*')
     .eq('query', query)
-    .eq('grade_level', grade || null)
     .gt('expires_at', new Date().toISOString())
     .single()
 

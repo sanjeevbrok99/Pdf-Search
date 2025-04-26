@@ -3,5 +3,5 @@
 ###
 # @name  search
 
-GET {{server}}/api/search?q=history+query&grade=9&skipCache=true
+GET {{server}}/api/search?q=ragnarok+query
 Content-Type: application/json

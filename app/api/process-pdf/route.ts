@@ -5,19 +5,49 @@ import path from 'path'
 import fs from 'fs/promises'
 import { v4 as uuidv4 } from 'uuid'
 import puppeteer from 'puppeteer';
+const server = process.env.DOC_READER_SERVER;
+const accessToken = process.env.DOC_READER_TOKEN;
+import axios from 'axios'
 
-// Download PDF from URL and return as ArrayBuffer
-async function downloadPDF(url: string): Promise<ArrayBuffer> {
-  const response = await fetch(url)
-  if (!response.ok) throw new Error(`Failed to download PDF: ${response.statusText}`)
-  return response.arrayBuffer()
+export const  downloadPDF =  async(url: string): Promise<Buffer> =>{
+  try {
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer', // this is KEY for PDFs
+      timeout: 15000, // 15 seconds timeout (you can adjust)
+      headers: {
+        'Accept': 'application/pdf'
+      }
+    })
+
+    if (response.status !== 200) {
+      throw new Error(`Failed to download PDF. Status: ${response.status}`)
+    }
+
+    return Buffer.from(response.data)
+  } catch (error: any) {
+    console.error('Error downloading PDF:', url, error.message)
+    throw new Error('Failed to download PDF')
+  }
 }
 
-// Extract text content and total pages from a PDF Buffer
-async function extractPageContent(buffer: Buffer): Promise<{
+// Download PDF from URL and return as ArrayBuffer
+async function sendDocForProcessing(url: string, documentId: string) {
+  await fetch(`${server}/doc/process`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      doc_urls: [url],
+      index_name: `doc_${documentId}`
+    })
+  })
+}
+export const extractPageContent =  async(buffer: Buffer): Promise<{
   content: string
   totalPages: number
-}> {
+}> =>{
   try {
     const data = await pdfParse(buffer)
     const content = data.text
@@ -32,16 +62,83 @@ async function extractPageContent(buffer: Buffer): Promise<{
     throw new Error('Failed to extract PDF content')
   }
 }
+// async function waitForDocProcessing(documentId: string) {
+//   const indexName = `doc_${documentId}`
+//   let isReady = false
+//   let retries = 0
+//   while (!isReady && retries < 10) {
+//     const res = await fetch(`${server}/doc/index-status`, {
+//       method: 'POST',
+//       headers: {
+//         'Authorization': `Bearer ${accessToken}`,
+//         'Content-Type': 'application/json'
+//       },
+//       body: JSON.stringify({ index_name: indexName })
+//     })
+//     const data = await res.json()
+//     if (data.status === 'ready') {
+//       isReady = true
+//     } else {
+//       await new Promise(resolve => setTimeout(resolve, 3000)) // wait 3 seconds
+//       retries++
+//     }
+//   }
+//   if (!isReady) throw new Error('Doc processing timeout')
+// }
+
+export const askQuestionFromDocReader  = async(documentId: string, query: string) => {
+  const res = await fetch(`${server}/doc/qna`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      index_names: [`doc_${documentId}`],
+      q: `
+        You are a smart document search assistant.
+        Given the user's query: "${query}", and the document's extracted text,
+        your task is to find the pages that are most relevant to the query.
+        Respond ONLY with the start page, end page, and a relevance score between 0 and 1.
+        Be concise and accurate.
+      `,
+      settings: {
+        max_tokens: 1000,
+        temperature: 0.2, // lower temp = more accurate
+        model_name: "gpt-3.5-turbo-16k",
+        verbose: true
+      }
+    })
+  })
+  const data = await res.json()
+  const responseText = data[0]?.result?.response ?? '';
+
+  // Parse Start Page, End Page, and Relevance Score manually
+  const startPageMatch = responseText.match(/Start page:\s*(\d+)/i);
+  const endPageMatch = responseText.match(/End page:\s*(\d+)/i);
+  const relevanceScoreMatch = responseText.match(/Relevance score:\s*(\d+(\.\d+)?)/i);
+
+  const startPage = startPageMatch ? parseInt(startPageMatch[1], 10) : 1;
+  const endPage = endPageMatch ? parseInt(endPageMatch[1], 10) : 5;
+  const relevanceScore = relevanceScoreMatch ? parseFloat(relevanceScoreMatch[1]) : 1;
+
+  return {
+    startPage,
+    endPage,
+    relevanceScore
+  };
+}
 
 // Placeholder preview image URL generator
 
-export const generatePreviewImage = async (pdfBuffer: Buffer): Promise<string> => {
+export const generatePreviewImage = async (pdfUrl: string) => {
   const id = uuidv4();
   const tmpPdfPath = path.join('/tmp', `preview-${id}.pdf`);
   const tmpImagePath = tmpPdfPath.replace('.pdf', '.jpg');
 
-  // Save PDF buffer to temp file
-  await fs.writeFile(tmpPdfPath, pdfBuffer);
+  // Download PDF from URL directly into /tmp
+  const response = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
+  await fs.writeFile(tmpPdfPath, response.data);
 
   // Launch Puppeteer
   const browser = await puppeteer.launch({
@@ -82,34 +179,6 @@ export const generatePreviewImage = async (pdfBuffer: Buffer): Promise<string> =
   return data.publicUrl;
 };
 
-// Simple relevance calculation based on query terms frequency
-async function findRelevantPages(
-  content: string,
-  query: string,
-  totalPages: number
-): Promise<{
-  startPage: number
-  endPage: number
-  relevanceScore: number
-}> {
-  const queryTerms = query.toLowerCase().split(' ')
-  const contentLower = content.toLowerCase()
-
-  const termFrequency = queryTerms.reduce((count, term) => {
-    const regex = new RegExp(term, 'g')
-    const matches = contentLower.match(regex)
-    return count + (matches ? matches.length : 0)
-  }, 0)
-
-  const relevanceScore = Math.min(termFrequency / 10, 1)
-
-  return {
-    startPage: 1,
-    endPage: Math.min(5, totalPages),
-    relevanceScore
-  }
-}
-
 // POST handler for processing the PDF
 export async function POST(request: Request) {
   try {
@@ -119,36 +188,37 @@ export async function POST(request: Request) {
     await updateDocumentStatus(documentId, 'processing')
 
     try {
-      // Download and parse the PDF
-      const pdfBuffer = Buffer.from(await downloadPDF(url))
 
-      const { content, totalPages } = await extractPageContent(pdfBuffer)
+      // Step 1: Send PDF URL to Doc Reader Service
+      await sendDocForProcessing(url, documentId) // function to call POST /doc/process
 
-      const previewImageUrl = await generatePreviewImage(pdfBuffer)
+      // Step 2: Poll Doc Reader to check if processing is done
+      // await waitForDocProcessing(documentId) // function to call POST /doc/index-status
 
-      const relevantPages = await findRelevantPages(content, query, totalPages)
+      const previewImageUrl = await generatePreviewImage(url);
 
-      // Update the document with extracted details
+      // Step 3: Ask question using Doc Reader Service
+      const answer = await askQuestionFromDocReader(documentId, query) // function to call POST /doc/qna
+
+      // Step 4: Update document details into your database
       await supabase
         .from('documents')
         .update({
-          content,
-          total_pages: totalPages,
           preview_image_url: previewImageUrl,
           status: 'completed',
           updated_at: new Date().toISOString()
         })
         .eq('id', documentId)
 
-      // Insert relevant page info
+      // Step 5: Save relevant page info (from answer)
       await supabase
         .from('relevant_pages')
         .insert({
           document_id: documentId,
           query,
-          start_page: relevantPages.startPage,
-          end_page: relevantPages.endPage,
-          relevance_score: relevantPages.relevanceScore
+          start_page: answer.startPage,
+          end_page: answer.endPage,
+          relevance_score: answer.relevanceScore
         })
 
       return NextResponse.json({ success: true })

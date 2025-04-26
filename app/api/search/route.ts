@@ -1,18 +1,17 @@
 import { NextResponse } from 'next/server'
 import { supabase, searchGoogleForPDFs, getSearchResultsFromCache, saveSearchHistory } from '@/lib/supabase'
 import { ProcessingStatus, SearchResult } from '@/types'
+import { downloadPDF, extractPageContent } from '../process-pdf/route'
 
 // Helper function to filter valid documents
 function filterValidDocuments(docs: any[]) {
   return docs.filter(doc =>
-    doc.content !== null &&
     doc.preview_image_url !== null &&
-    doc.error_message === null &&
     doc.status === 'completed'
   )
 }
 
-async function waitForDocumentCompletion(documentId: string, timeoutMs = 30000, intervalMs = 1000): Promise<any> {
+async function waitForDocumentCompletion(documentId: string, timeoutMs = 130000, intervalMs = 1000): Promise<any> {
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     const { data: doc } = await supabase
@@ -21,7 +20,7 @@ async function waitForDocumentCompletion(documentId: string, timeoutMs = 30000, 
       .eq('id', documentId)
       .single()
 
-    if (doc && doc.status === 'completed' && doc.preview_image_url && doc.content) {
+    if (doc && doc.status === 'completed' && doc.preview_image_url ) {
       return doc
     }
 
@@ -67,62 +66,65 @@ export async function GET(request: Request) {
 
     // Process each result
     const processPromises = googleResults.map(async (result: any) => {
-            // Check if document already exists
-      const { data: existingDoc } = await supabase
-        .from('documents')
-        .select('*')
-        .eq('url', result.link)
-        .single()
+      try {
+        // Step 1: Try to download PDF first
+        const pdfBuffer = Buffer.from(await downloadPDF(result.link))
 
-        // If document exists and is completed with content, return it
-      if (existingDoc && existingDoc.status === 'completed' &&
-          existingDoc.content !== null &&
-          existingDoc.preview_image_url !== null &&
-          !existingDoc.error_message) {
-        return existingDoc
+        // Step 2: Try to extract page content
+        const { content, totalPages } = await extractPageContent(pdfBuffer)
+
+        if (!content || content.length === 0) {
+          console.warn('Empty content from PDF:', result.link)
+          return null // skip this document
+        }
+
+        // Step 3: Now safe to save to DB
+        const { data: doc, error } = await supabase
+          .from('documents')
+          .upsert({
+            url: result.link,
+            title: result.title,
+            status: 'pending' as ProcessingStatus,
+            grade_level: gradeLevel || null,
+            content:content ,
+            total_pages: totalPages,
+            preview_image_url: null,
+            error_message: null,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'url'
+          })
+          .select()
+          .single()
+
+        if (error) throw error
+
+        const baseUrl = process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : 'http://localhost:3001'
+
+        // Step 4: Call process-pdf API
+        await fetch(`${baseUrl}/api/process-pdf`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            documentId: doc.id,
+            url: result.link,
+            query
+          })
+        })
+
+        // Step 5: Wait for document completion
+        const completedDoc = await waitForDocumentCompletion(doc.id)
+        return completedDoc
+      } catch (error) {
+        console.error('Skipping invalid PDF link:', result.link, error)
+        return null // Skip invalid/broken pdfs
       }
+    })
 
-      // Create or update document
-      const { data: doc, error } = await supabase
-        .from('documents')
-        .upsert({
-          url: result.link,
-          title: result.title,
-          status: 'pending' as ProcessingStatus,
-          grade_level: gradeLevel || null,
-          content: null,
-          preview_image_url: null,
-          error_message: null,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'url'
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-
-      const baseUrl = process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : 'http://localhost:3001'
-
-      // Wait for the background processing API call to be queued
-      await fetch(`${baseUrl}/api/process-pdf`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          documentId: doc.id,
-          url: result.link,
-          query
-        })
-      })
-
-      const completedDoc = await waitForDocumentCompletion(doc.id)
-      return completedDoc
-        })
-
-    // Get initial results
-    const allDocuments = await Promise.all(processPromises)
+    // Finally, after Promise.all
+    const allDocuments = (await Promise.all(processPromises)).filter(Boolean)
 
     // Cache all documents (including invalid ones, they might be processed later)
     const expiresAt = new Date()
@@ -137,11 +139,9 @@ export async function GET(request: Request) {
         expires_at: expiresAt.toISOString()
       })
 
-      const validDocuments = filterValidDocuments(allDocuments)
-
     // Return documents, including pending ones for first search
     return NextResponse.json({
-      documents: validDocuments,
+      documents: allDocuments,
       fromCache: false
     })
   } catch (error) {
