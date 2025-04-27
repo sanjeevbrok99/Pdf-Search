@@ -78,7 +78,6 @@ export const askQuestionFromDocReader = async (documentId: string, query: string
   const data = await res.json();
   const responseText = data[0]?.result?.response ?? '';
 
-  // Safely extract start and end page
   const startPageMatch = responseText.match(/Start page:\s*(\d+)/i);
   const endPageMatch = responseText.match(/End page:\s*(\d+)/i);
 
@@ -156,7 +155,8 @@ export async function POST(request: Request) {
     try {
 
       // Step 1: Send PDF URL to Doc Reader Service
-      await sendDocForProcessing(url, documentId) // function to call POST /doc/process
+      await sendDocForProcessing(url, documentId)
+
       const previewPromise = generatePreviewImage(url)
 
       const previewImageUrl = await previewPromise;
@@ -164,7 +164,6 @@ export async function POST(request: Request) {
       // Step 2: Ask question using Doc Reader Service
       const answer = await askQuestionFromDocReader(documentId, query)
 
-      // Step 3: Update document details into your database
       await supabase
       .from('documents')
       .update({

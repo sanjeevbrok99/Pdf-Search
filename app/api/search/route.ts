@@ -4,6 +4,7 @@ import { ProcessingStatus, SearchResult } from '@/types'
 import { extractPageContent } from '../process-pdf/route'
 import axios from 'axios'
 import redis from '@/lib/redis';
+const casheDuration:any = process.env.SEARCH_CACHE_DURATION
 
 // Helper function to filter valid documents
 function filterValidDocuments(docs: any[]) {
@@ -80,8 +81,6 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Query parameter is required' }, { status: 400 })
     }
 
-    await saveSearchHistory(query, gradeLevel || undefined)
-
     const searchHistory = JSON.stringify({
       query: query,
       created_at: new Date().toISOString()
@@ -149,9 +148,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ documents: [], fromCache: false })
     }
 
-    const cacheDuration = 3600; // Cache for 1 hour by default
+    ; // Cache for 1 hour by default
     await redis.rpush(cacheKey, JSON.stringify(readyPDFs));
-    await redis.expire(cacheKey, cacheDuration);
+    await redis.expire(cacheKey, casheDuration);
 
     // Step 4: Save all PDFs into DB in parallel
     const savedDocuments = await Promise.all(
@@ -216,19 +215,6 @@ export async function GET(request: Request) {
 
     const finalDocuments = completedDocs.filter(Boolean)
 
-    // Step 7: Cache the search results
-    // const expiresAt = new Date()
-    // expiresAt.setSeconds(expiresAt.getSeconds() + Number(process.env.SEARCH_CACHE_DURATION || 3600))
-
-    // await supabase
-    //   .from('search_results_cache')
-    //   .insert({
-    //     query,
-    //     grade_level: gradeLevel || null,
-    //     document_ids: finalDocuments.map(doc => doc.id),
-    //     expires_at: expiresAt.toISOString()
-    //   })
-
     return NextResponse.json({
       documents: finalDocuments,
       fromCache: false
@@ -242,35 +228,35 @@ export async function GET(request: Request) {
   }
 }
 
-// Streaming endpoint for getting updates on processing documents
-export async function POST(request: Request) {
-  const { searchParams } = new URL(request.url)
-  const documentIds = searchParams.get('documentIds')?.split(',')
+// // Streaming endpoint for getting updates on processing documents
+// export async function POST(request: Request) {
+//   const { searchParams } = new URL(request.url)
+//   const documentIds = searchParams.get('documentIds')?.split(',')
 
-  if (!documentIds?.length) {
-    return NextResponse.json({ error: 'Document IDs are required' }, { status: 400 })
-  }
+//   if (!documentIds?.length) {
+//     return NextResponse.json({ error: 'Document IDs are required' }, { status: 400 })
+//   }
 
-  try {
-    const { data: documents, error } = await supabase
-      .from('documents')
-      .select('*, relevant_pages(*)')
-      .in('id', documentIds)
-      .order('created_at', { ascending: false })
+//   try {
+//     const { data: documents, error } = await supabase
+//       .from('documents')
+//       .select('*, relevant_pages(*)')
+//       .in('id', documentIds)
+//       .order('created_at', { ascending: false })
 
-    if (error) throw error
+//     if (error) throw error
 
-    const results: SearchResult[] = documents.map(doc => ({
-      ...doc,
-      relevantPages: doc.relevant_pages?.[0] || undefined
-    }))
+//     const results: SearchResult[] = documents.map(doc => ({
+//       ...doc,
+//       relevantPages: doc.relevant_pages?.[0] || undefined
+//     }))
 
-    return NextResponse.json({ documents: results })
-  } catch (error) {
-    console.error('Update check error:', error)
-    return NextResponse.json(
-      { error: 'Failed to check for updates' },
-      { status: 500 }
-    )
-  }
-}
+//     return NextResponse.json({ documents: results })
+//   } catch (error) {
+//     console.error('Update check error:', error)
+//     return NextResponse.json(
+//       { error: 'Failed to check for updates' },
+//       { status: 500 }
+//     )
+//   }
+// }
