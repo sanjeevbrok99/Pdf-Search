@@ -13,7 +13,7 @@ A modern web application that enables users to upload, parse, and search through
 - 🔍 **Real-Time Search Functionality**: Search through indexed PDFs instantly based on user queries.
 - 🧑‍💻 **Google Custom Search API**: Search the web for PDF links, ensuring relevant results for users.
 - 🔄 **Redis Caching**: Cache search results and document metadata for faster future queries.
-- 🎨 **Puppeteer for Image Previews**: Generate image previews of PDFs using Puppeteer for better UX.
+- 🎨 **Cloudinary for Image Previews**: Generate image previews of PDFs using Cloudinary for better UX.
 - 🛢️ **Supabase Integration**: Store and manage documents and metadata persistently in Supabase.
 
 ---
@@ -71,10 +71,10 @@ A modern web application that enables users to upload, parse, and search through
 - **Document Metadata Caching**: Caches metadata of processed PDFs in Redis, ensuring faster access and retrieval for subsequent searches or document accesses.
 - **Cache Expiry**: Manages cache expiration and invalidation to ensure that cached search results and metadata remain up-to-date.
 
-### 🎨 Puppeteer Image Preview
-- **Image Generation**: Uses Puppeteer to generate preview images for uploaded PDFs, providing a visual representation of the document before full processing.
+### 🎨 Cloudinary Image Preview
+- **Image Generation**: Uses Cloudinary to generate preview images for uploaded PDFs, providing a visual representation of the document before full processing.
 - **Image Preview in Search Results**: Previews (thumbnails) of PDFs are generated during the search process to give users a quick view of the document's contents.
-- **Headless Browsing**: Operates Puppeteer in a headless mode, ensuring that PDF previews are generated efficiently without the need for a graphical interface.
+- **Headless Browsing**: Operates Cloudinary in a headless mode, ensuring that PDF previews are generated efficiently without the need for a graphical interface.
 
 ### 🧑‍💻 Supabase Integration
 - **Document and Metadata Storage**: Stores uploaded PDFs and their metadata in Supabase, allowing for long-term persistence and retrieval.
