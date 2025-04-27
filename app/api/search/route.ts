@@ -114,7 +114,7 @@ export async function GET(request: Request) {
         return fetch(`${baseUrl}/api/process-pdf`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ documentId: doc.id, url: doc.url, query })
+          body: JSON.stringify({ documentId: doc.id, url: doc.url, query, })
         }).catch(error => {
           console.error('Failed to process PDF:', doc.url, error);
         });

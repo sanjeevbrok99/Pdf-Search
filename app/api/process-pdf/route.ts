@@ -12,8 +12,6 @@ export async function POST(request: Request) {
 
     try {
 
-      const indexStatus = await DocReaderService.indexDocument(indexName);
-
       // Step 1: Send PDF URL to Doc Reader Service
       await DocReaderService.sendDocForProcessing(url, documentId)
 
