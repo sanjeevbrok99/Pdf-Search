@@ -23,6 +23,7 @@ async function sendDocForProcessing(url: string, documentId: string) {
     })
   })
 }
+
 export const extractPageContent =  async(buffer: Buffer): Promise<{
   content: string
   totalPages: number
@@ -41,29 +42,6 @@ export const extractPageContent =  async(buffer: Buffer): Promise<{
     throw new Error('Failed to extract PDF content')
   }
 }
-// async function waitForDocProcessing(documentId: string) {
-//   const indexName = `doc_${documentId}`
-//   let isReady = false
-//   let retries = 0
-//   while (!isReady && retries < 10) {
-//     const res = await fetch(`${server}/doc/index-status`, {
-//       method: 'POST',
-//       headers: {
-//         'Authorization': `Bearer ${accessToken}`,
-//         'Content-Type': 'application/json'
-//       },
-//       body: JSON.stringify({ index_name: indexName })
-//     })
-//     const data = await res.json()
-//     if (data.status === 'ready') {
-//       isReady = true
-//     } else {
-//       await new Promise(resolve => setTimeout(resolve, 3000)) // wait 3 seconds
-//       retries++
-//     }
-//   }
-//   if (!isReady) throw new Error('Doc processing timeout')
-// }
 
 export const askQuestionFromDocReader = async (documentId: string, query: string) => {
   const res = await fetch(`${server}/doc/qna`, {
@@ -105,11 +83,11 @@ export const askQuestionFromDocReader = async (documentId: string, query: string
   const endPageMatch = responseText.match(/End page:\s*(\d+)/i);
 
   let startPage = startPageMatch ? parseInt(startPageMatch[1], 10) : 1;
-  let endPage = endPageMatch ? parseInt(endPageMatch[1], 10) : startPage; // fallback: endPage = startPage if missing
+  let endPage = endPageMatch ? parseInt(endPageMatch[1], 10) : startPage;
 
   // Ensure startPage <= endPage
   if (startPage > endPage) {
-    [startPage, endPage] = [endPage, startPage]; // swap if needed
+    [startPage, endPage] = [endPage, startPage];
   }
 
   return {
@@ -118,7 +96,7 @@ export const askQuestionFromDocReader = async (documentId: string, query: string
   };
 };
 
-// Placeholder preview image URL generator
+// preview image URL generator
 
 export const generatePreviewImage = async (pdfUrl: string) => {
   const id = uuidv4();
@@ -129,7 +107,6 @@ export const generatePreviewImage = async (pdfUrl: string) => {
   const response = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
   await fs.writeFile(tmpPdfPath, response.data);
 
-  // Launch Puppeteer
   const browser = await puppeteer.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
@@ -182,14 +159,12 @@ export async function POST(request: Request) {
       await sendDocForProcessing(url, documentId) // function to call POST /doc/process
       const previewPromise = generatePreviewImage(url)
 
-      // Step 2: Poll Doc Reader to check if processing is done
-      // await waitForDocProcessing(documentId) // function to call POST /doc/index-status
       const previewImageUrl = await previewPromise;
 
-      // Step 3: Ask question using Doc Reader Service
+      // Step 2: Ask question using Doc Reader Service
       const answer = await askQuestionFromDocReader(documentId, query)
 
-      // Step 4: Update document details into your database
+      // Step 3: Update document details into your database
       await supabase
       .from('documents')
       .update({
