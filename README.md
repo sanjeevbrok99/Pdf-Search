@@ -78,7 +78,7 @@ A modern web application that enables users to upload, parse, and search through
 
 ### 🧑‍💻 Supabase Integration
 - **Document and Metadata Storage**: Stores uploaded PDFs and their metadata in Supabase, allowing for long-term persistence and retrieval.
-- **Real-Time Search**: Indexes document metadata (like title, author, keywords) in Supabase for fast querying, enabling real-time search results for users.
+- **Real-Time Search**: Indexes document metadata (like turl) in Supabase for fast querying, enabling real-time search results for users.
 - **Data Integrity**: Ensures that all stored data is valid and properly indexed in Supabase to maintain data integrity and prevent errors in document retrieval.
 
 ### 🚀 Real-Time Search and Document Processing
