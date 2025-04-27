@@ -130,9 +130,10 @@ export async function GET(request: Request) {
     );
 
     const finalDocuments = completedDocs.filter(Boolean);
-
+    
+   if(finalDocuments.length>0){
     await SearchService.cacheDocuments(cacheKey, finalDocuments,gradeLevel);
-
+   }
     return NextResponse.json({
       documents: finalDocuments,
       fromCache: false

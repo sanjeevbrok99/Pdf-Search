@@ -129,7 +129,7 @@ class DocReaderService {
     return previewImageUrl;
   }
 
-  static async  indexDocument(indexName: string): Promise<any> {
+  static async indexDocumentStatus(indexName: string): Promise<any> {
     const url = `${server}/doc/index-status`; // Your server URL here
     const headers = {
       'Content-Type': 'application/json',
@@ -159,6 +159,61 @@ class DocReaderService {
       return { success: false, error: error.message };
     }
   }
+  static async waitForStatusDone(indexName: any, totalRetries = 60) {
+    const errMsg = "Sorry! Doc reader failed to process the request.";
+    let i = 0;
+    let resolved = false;
+
+    return new Promise((resolve, reject) => {
+      const interval = setInterval(async () => {
+        if (resolved) return;
+        try {
+          i++;
+          console.log("checking status:", indexName);
+
+          if (i > totalRetries) {
+            clearInterval(interval);
+            resolved = true;
+            reject(new Error(errMsg));
+            return;
+          }
+
+          const response = await this.indexDocumentStatus(indexName);
+
+          if (!response || typeof response.status === 'undefined') {
+            console.warn('Index status response invalid, retrying...', response);
+            return;
+          }
+
+          console.log("status:", indexName, response.status);
+
+          if (response.status === "done") {
+            clearInterval(interval);
+            resolved = true; // ✅ Set flag
+            resolve("done");
+            return;
+          }
+
+          if (response.status === "loading") {
+            console.log(`Still loading: ${indexName}`);
+            // continue waiting
+          } else {
+            clearInterval(interval);
+            resolved = true;
+            reject(new Error(errMsg));
+            return;
+          }
+
+        } catch (err) {
+          console.error("Error while checking index status:", err);
+          clearInterval(interval);
+          resolved = true;
+          reject(new Error(errMsg));
+        }
+      }, 3000);
+    });
+  }
+
 }
 
 export default DocReaderService;

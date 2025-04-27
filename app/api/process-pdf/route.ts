@@ -12,15 +12,19 @@ export async function POST(request: Request) {
 
     try {
 
-      // Step 1: Send PDF URL to Doc Reader Service
-      await DocReaderService.sendDocForProcessing(url, documentId)
+      const sendDocPromise = DocReaderService.sendDocForProcessing(url, documentId);
 
-      const previewPromise = DocReaderService.generatePreviewImage(url)
+      // Start preview generation in parallel
+      const previewPromise = DocReaderService.generatePreviewImage(url);
 
+      await sendDocPromise;
+
+      await DocReaderService.waitForStatusDone(`doc_${documentId}`);
+
+      const answer = await DocReaderService.askQuestionFromDocReader(documentId, query);
+
+      // Wait for preview image to finish
       const previewImageUrl = await previewPromise;
-
-      // Step 2: Ask question using Doc Reader Service
-      const answer = await DocReaderService.askQuestionFromDocReader(documentId, query)
 
       await supabase
       .from('documents')
@@ -33,7 +37,7 @@ export async function POST(request: Request) {
       })
       .eq('id', documentId)
 
-      return NextResponse.json({ success: true })
+      return { status: 'completed', previewImageUrl, answer }; // Final result
 
     } catch (processingError) {
       console.error('PDF processing error:', processingError)

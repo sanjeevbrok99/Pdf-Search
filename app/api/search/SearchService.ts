@@ -22,12 +22,12 @@ export default class SearchService {
       }
 
       const response = await axios.head(resolvedUrl, {
-        timeout: 5000,
+        timeout: 3000,
         headers: {
           'Accept': 'application/pdf',
           'Referer': 'https://www.google.com/',
         },
-        maxRedirects: 5,
+        maxRedirects: 2,
         validateStatus: (status) => status >= 200 && status < 300,
       });
 
@@ -57,13 +57,13 @@ static async downloadPDF(url: string): Promise<Buffer> {
 
     const response = await axios.get(resolvedUrl, {
       responseType: 'arraybuffer',
-      timeout: 15000,
+      timeout: 10000,
       headers: {
         'Accept': 'application/pdf',
         'Referer': 'https://www.google.com/',
       },
       validateStatus: (status) => status >= 200 && status < 300,
-      maxRedirects: 5,
+      maxRedirects: 3,
     });
 
     // Verify content type is PDF
