@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     if (!query) {
       return NextResponse.json({ error: 'Query parameter is required' }, { status: 400 });
     }
+    await redis.lpush('search-history', JSON.stringify({ query, createdAt: Date.now() }));
 
     const cacheKey = `search:${query}:${gradeLevel || 'all'}`;
 
