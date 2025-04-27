@@ -128,6 +128,37 @@ class DocReaderService {
 
     return data.publicUrl;
   }
+
+  static async  indexDocument(indexName: string): Promise<any> {
+    const url = `${server}/doc/index-status`; // Your server URL here
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}` // Assuming you have an access token
+    };
+
+    const body = JSON.stringify({
+      index_name: indexName
+    });
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(`Indexing failed: ${data.error || 'Unknown error'}`);
+      }
+
+      return data; // This should contain the status of the indexing process
+    } catch (error:any) {
+      console.error('Indexing error:', error);
+      return { success: false, error: error.message };
+    }
+  }
 }
 
 export default DocReaderService;

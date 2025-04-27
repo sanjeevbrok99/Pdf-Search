@@ -19,12 +19,19 @@ export async function GET(request: Request) {
     const cacheKey = `search:${query}:${gradeLevel || 'all'}`;
 
     if (!skipCache) {
-      const cachedResults = await redis.get(cacheKey);
-      if (cachedResults) {
-        return NextResponse.json({
-          documents: JSON.parse(cachedResults),
-          fromCache: true
-        });
+      try {
+        // Retrieve the list of documents from Redis
+        const cachedResults = await redis.lrange(cacheKey, 0, -1);
+        if (cachedResults && cachedResults.length > 0) {
+          // Parse each item in the list
+          const parsedResults = cachedResults.map((item) => JSON.parse(item));
+          return NextResponse.json({
+            documents: parsedResults,
+            fromCache: true,
+          });
+        }
+      } catch (error) {
+        console.error(`Error retrieving cache for ${cacheKey}:`, error);
       }
     }
 
@@ -70,8 +77,6 @@ export async function GET(request: Request) {
     if (readyPDFs.length === 0) {
       return NextResponse.json({ documents: [], fromCache: false });
     }
-
-    await SearchService.cacheDocuments(cacheKey, readyPDFs);
 
     const savedDocuments = await Promise.all(
       readyPDFs.map(async (pdf: any) => {
@@ -124,6 +129,8 @@ export async function GET(request: Request) {
     );
 
     const finalDocuments = completedDocs.filter(Boolean);
+
+    await SearchService.cacheDocuments(cacheKey, finalDocuments,gradeLevel);
 
     return NextResponse.json({
       documents: finalDocuments,

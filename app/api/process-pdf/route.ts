@@ -5,12 +5,14 @@ import DocReaderService from './DocReader'
 // POST handler for processing the PDF
 export async function POST(request: Request) {
   try {
-    const { documentId, url, query } = await request.json()
+    const { documentId, url, query, indexName } = await request.json()
 
     // Set document status to 'processing'
     await updateDocumentStatus(documentId, 'processing')
 
     try {
+
+      const indexStatus = await DocReaderService.indexDocument(indexName);
 
       // Step 1: Send PDF URL to Doc Reader Service
       await DocReaderService.sendDocForProcessing(url, documentId)
