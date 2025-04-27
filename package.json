@@ -29,6 +29,7 @@
     "node-fetch": "^3.3.2",
     "pdf-parse": "^1.1.1",
     "prettier": "^3.3.3",
+    "puppeteer": "^24.7.2",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "swr": "^2.2.5",
