@@ -1,148 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabase, updateDocumentStatus } from '@/lib/supabase'
-import pdfParse from 'pdf-parse/lib/pdf-parse.js'
-import path from 'path'
-import fs from 'fs/promises'
-import { v4 as uuidv4 } from 'uuid'
-import puppeteer from 'puppeteer';
-const server = process.env.DOC_READER_SERVER;
-const accessToken = process.env.DOC_READER_TOKEN;
-import axios from 'axios'
-
-// Download PDF from URL and return as ArrayBuffer
-async function sendDocForProcessing(url: string, documentId: string) {
-  await fetch(`${server}/doc/process`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      doc_urls: [url],
-      index_name: `doc_${documentId}`
-    })
-  })
-}
-
-export const extractPageContent =  async(buffer: Buffer): Promise<{
-  content: string
-  totalPages: number
-}> =>{
-  try {
-    const data = await pdfParse(buffer)
-    const content = data.text
-    const totalPages = data.numpages
-
-    return {
-      content,
-      totalPages
-    }
-  } catch (error) {
-    console.error('Error extracting PDF content:', error)
-    throw new Error('Failed to extract PDF content')
-  }
-}
-
-export const askQuestionFromDocReader = async (documentId: string, query: string) => {
-  const res = await fetch(`${server}/doc/qna`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      index_names: [`doc_${documentId}`],
-      q: `
-        You are an intelligent document search assistant.
-        Given the user's query: "${query}" and the indexed document text across all pages,
-        your task is to carefully search across all the pages and find the most relevant start page and end page.
-
-        Instructions:
-        - Respond ONLY in the following exact format:
-          Start page: [number]
-          End page: [number]
-        - Do not include any explanation, comments, or extra text.
-        - If the answer is found on a single page, Start page and End page must be the same.
-        - Always ensure the start page number is less than or equal to the end page number.
-        - If you cannot find the answer, return Start page: 1 and End page: 1.
-      `,
-      settings: {
-        max_tokens: 500,
-        temperature: 0.2,
-        model_name: "gpt-3.5-turbo-16k",
-        verbose: false
-      }
-    })
-  });
-
-  const data = await res.json();
-  const responseText = data[0]?.result?.response ?? '';
-
-  const startPageMatch = responseText.match(/Start page:\s*(\d+)/i);
-  const endPageMatch = responseText.match(/End page:\s*(\d+)/i);
-
-  let startPage = startPageMatch ? parseInt(startPageMatch[1], 10) : 1;
-  let endPage = endPageMatch ? parseInt(endPageMatch[1], 10) : startPage;
-
-  // Ensure startPage <= endPage
-  if (startPage > endPage) {
-    [startPage, endPage] = [endPage, startPage];
-  }
-
-  return {
-    startPage,
-    endPage
-  };
-};
-
-// preview image URL generator
-
-export const generatePreviewImage = async (pdfUrl: string) => {
-  const id = uuidv4();
-  const tmpPdfPath = path.join('/tmp', `preview-${id}.pdf`);
-  const tmpImagePath = tmpPdfPath.replace('.pdf', '.jpg');
-
-  // Download PDF from URL directly into /tmp
-  const response = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
-  await fs.writeFile(tmpPdfPath, response.data);
-
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
-
-  const page = await browser.newPage();
-
-  // Load PDF as file
-  await page.goto(`file://${tmpPdfPath}`, {
-    waitUntil: 'networkidle0',
-  });
-
-  // Take a screenshot
-  const imageBuffer = await page.screenshot({
-    fullPage: true,
-    type: 'jpeg',
-    quality: 80,
-  });
-
-  await browser.close();
-
-  // Upload to Supabase
-  const { error } = await supabase.storage
-    .from('image-previews')
-    .upload(`preview-${id}.jpg`, imageBuffer, {
-      contentType: 'image/jpeg',
-      upsert: true,
-    });
-
-  if (error) throw error;
-
-  const { data } = supabase.storage
-    .from('image-previews')
-    .getPublicUrl(`preview-${id}.jpg`);
-
-  return data.publicUrl;
-};
+import DocReaderService from './DocReader'
 
 // POST handler for processing the PDF
 export async function POST(request: Request) {
@@ -155,14 +13,14 @@ export async function POST(request: Request) {
     try {
 
       // Step 1: Send PDF URL to Doc Reader Service
-      await sendDocForProcessing(url, documentId)
+      await DocReaderService.sendDocForProcessing(url, documentId)
 
-      const previewPromise = generatePreviewImage(url)
+      const previewPromise = DocReaderService.generatePreviewImage(url)
 
       const previewImageUrl = await previewPromise;
 
       // Step 2: Ask question using Doc Reader Service
-      const answer = await askQuestionFromDocReader(documentId, query)
+      const answer = await DocReaderService.askQuestionFromDocReader(documentId, query)
 
       await supabase
       .from('documents')
