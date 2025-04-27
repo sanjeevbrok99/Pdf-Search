@@ -107,7 +107,7 @@ export async function GET(request: Request) {
     const docsToProcess = savedDocuments.filter(Boolean);
 
     const baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
+      ? `${process.env.VERCEL_URL}`
       : 'http://localhost:3001';
 
     await Promise.all(

@@ -1,11 +1,14 @@
-import { supabase } from '@/lib/supabase';
-import { v4 as uuidv4 } from 'uuid';
-import path from 'path';
-import fs from 'fs/promises';
-import puppeteer from 'puppeteer';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
-import axios from 'axios';
+import { v2 as cloudinary } from 'cloudinary';
 
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
+  api_key: process.env.CLOUDINARY_API_KEY!,
+  api_secret: process.env.CLOUDINARY_API_SECRET!,
+  secure: true,
+  sdk_code: "nodejs",
+  sdk_semver: "1.37.0",
+});
 const server = process.env.DOC_READER_SERVER;
 const accessToken = process.env.DOC_READER_TOKEN;
 
@@ -90,43 +93,39 @@ class DocReaderService {
 
   // Generate Preview Image from first page of PDF
   static async generatePreviewImage(pdfUrl: string) {
-    const id = uuidv4();
-    const tmpPdfPath = path.join('/tmp', `preview-${id}.pdf`);
-    const tmpImagePath = tmpPdfPath.replace('.pdf', '.jpg');
+    const response = await fetch(pdfUrl);
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-    const response = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
-    await fs.writeFile(tmpPdfPath, response.data);
-
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    // Upload the PDF with resource_type: 'image'
+    const uploadResult: any = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          resource_type: 'image',
+          public_id: `previews/${Date.now()}`,
+          use_filename: true,
+          unique_filename: false,
+          overwrite: true,
+        },
+        (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        }
+      );
+      uploadStream.end(buffer);
     });
 
-    const page = await browser.newPage();
-    await page.goto(`file://${tmpPdfPath}`, { waitUntil: 'networkidle0' });
-
-    const imageBuffer = await page.screenshot({
-      fullPage: true,
-      type: 'jpeg',
-      quality: 80,
+    // Generate the preview image URL
+    const previewImageUrl = cloudinary.url(uploadResult.public_id, {
+      transformation: [
+        { width: 800, crop: 'scale' },
+      ],
+      page: 1,
+      format: 'jpg',
+      resource_type: 'image',
     });
 
-    await browser.close();
-
-    const { error } = await supabase.storage
-      .from('image-previews')
-      .upload(`preview-${id}.jpg`, imageBuffer, {
-        contentType: 'image/jpeg',
-        upsert: true,
-      });
-
-    if (error) throw error;
-
-    const { data } = supabase.storage
-      .from('image-previews')
-      .getPublicUrl(`preview-${id}.jpg`);
-
-    return data.publicUrl;
+    return previewImageUrl;
   }
 
   static async  indexDocument(indexName: string): Promise<any> {
