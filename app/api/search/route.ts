@@ -110,27 +110,54 @@ export async function GET(request: Request) {
       ? `${process.env.VERCEL_URL}`
       : 'http://localhost:3001';
 
-    await Promise.all(
-      docsToProcess.map(doc => {
-        return fetch(`${baseUrl}/api/process-pdf`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ documentId: doc.id, url: doc.url, query, })
-        }).catch(error => {
-          console.error('Failed to process PDF:', doc.url, error);
-        });
-      })
-    );
+      const processDocsInBatch = async (docsToProcess: any[], batchSize: number = 5) => {
+        // Function to process docs in smaller batches to avoid overwhelming the server
+        for (let i = 0; i < docsToProcess.length; i += batchSize) {
+          const batch = docsToProcess.slice(i, i + batchSize);
 
-    const completedDocs = await Promise.all(
-      docsToProcess.map(doc => SearchService.waitForDocumentCompletion(doc.id).catch(err => {
-        console.error('Timeout processing doc:', doc.url);
-        return null;
-      }))
-    );
+          await Promise.all(
+            batch.map(async (doc) => {
+              try {
+                // Sending document for processing
+                const response = await fetch(`${baseUrl}/api/process-pdf`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ documentId: doc.id, url: doc.url, query }),
+                });
 
-    const finalDocuments = completedDocs.filter(Boolean);
-    
+                if (!response.ok) {
+                  throw new Error(`Failed to process PDF: ${doc.url} - ${response.statusText}`);
+                }
+              } catch (error) {
+                console.error('Failed to process PDF:', doc.url, error);
+              }
+            })
+          );
+        }
+      };
+
+      const waitForDocumentsCompletion = async (docsToProcess: any[]) => {
+        return Promise.all(
+          docsToProcess.map(async (doc) => {
+            try {
+              const completedDoc = await SearchService.waitForDocumentCompletion(doc.id);
+              return completedDoc;
+            } catch (err) {
+              console.error('Timeout processing doc:', doc.url, err);
+              return null;
+            }
+          })
+        );
+      };
+
+      // Process documents in smaller batches
+      await processDocsInBatch(docsToProcess);
+
+      // Wait for all documents to be processed
+      const completedDocs = await waitForDocumentsCompletion(docsToProcess);
+
+      const finalDocuments = completedDocs.filter(Boolean);
+
    if(finalDocuments.length>0){
     await SearchService.cacheDocuments(cacheKey, finalDocuments,gradeLevel);
    }

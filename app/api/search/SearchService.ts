@@ -84,21 +84,46 @@ static async downloadPDF(url: string): Promise<Buffer> {
   }
 }
 
-  static async waitForDocumentCompletion(documentId: string, timeoutMs = 130000, intervalMs = 3000): Promise<any> {
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      const { data: doc } = await supabase
+static async waitForDocumentCompletion(
+  documentId: string,
+  timeoutMs = 120000,
+  intervalMs = 3000  // Polling interval of 3 seconds
+): Promise<any> {
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      // Fetch the document from the database
+      const { data: doc, error } = await supabase
         .from('documents')
         .select('*')
         .eq('id', documentId)
         .single();
+
+      if (error) {
+        console.error('Error fetching document:', error);
+        throw new Error('Failed to fetch document status');
+      }
+
+      if (doc && doc.status === 'error') {
+        console.log(`Document ${documentId} is in error status. Skipping.`);
+        return null;
+      }
+
+      // If document is completed and has a preview image, return the document
       if (doc && doc.status === 'completed' && doc.preview_image_url) {
         return doc;
       }
+
       await new Promise(resolve => setTimeout(resolve, intervalMs));
+    } catch (error) {
+      console.error(`Error while processing document ${documentId}:`, error);
+      return null;
     }
-    throw new Error('Timeout waiting for document processing');
   }
+
+  throw new Error(`Timeout waiting for document ${documentId} processing to complete.`);
+}
 
   static async cacheDocuments(cacheKey: string, documents: any[], gradeLevel:any) {
     // Append new documents to the existing list in Redis
@@ -109,7 +134,6 @@ static async downloadPDF(url: string): Promise<Buffer> {
 
     await redis.rpush(cacheKey, ...documentsWithGrade.map(doc => JSON.stringify(doc)));
 
-    // Set the expiration time for the cache
     await redis.expire(cacheKey, cacheDuration);
   }
 

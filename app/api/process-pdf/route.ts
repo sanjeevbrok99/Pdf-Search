@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       })
       .eq('id', documentId)
 
-      return { status: 'completed', previewImageUrl, answer }; // Final result
+      return NextResponse.json({ success: true, status: 'completed', previewImageUrl, answer });
 
     } catch (processingError) {
       console.error('PDF processing error:', processingError)
