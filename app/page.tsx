@@ -14,16 +14,17 @@ export default function Home() {
   const [currentStatusIndex, setCurrentStatusIndex] = useState(0);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const statuses = [
-    "🔍 Searching your PDFs...",
-    "📚 Looking for matching content...",
-    "🛠 Analyzing search results...",
-    "⚙️ Filtering results by grade...",
-    "⚡ Optimizing top matches...",
-    "💬 Preparing response...",
-    "🔄 Finalizing data...",
-    "📦 Packing your results...",
-    "🚀 Almost there...",
-    "✅ Results ready!",
+    "🔍 Searching through a world of knowledge for you...",
+    "📚 Scanning PDFs to uncover valuable insights...",
+    "🛠 Analyzing your study materials and cross-referencing results...",
+    "⚙️ Fine-tuning the search to match your needs perfectly...",
+    "⚡ Powering up your search with the best results...",
+    "💬 Crafting a response tailored to your learning journey...",
+    "🔄 Organizing everything for a clear and concise answer...",
+    "📦 Wrapping up your search results, ready for study...",
+    "🚀 Ready to launch your final insights and make studying easier...",
+    "✅ Your study guide is ready—packed with knowledge!",
+    "🎯 Identifying the most relevant results and perfecting your response..."
   ];
 
   // Fetch search history from the database
@@ -47,7 +48,7 @@ export default function Home() {
     if (!query.trim()) return;
 
     setIsLoading(true);
-    setCurrentStatusIndex(0); // Jab naya search ho, status ko reset kar
+    setCurrentStatusIndex(0);
     try {
       const params = new URLSearchParams({
         q: query,
@@ -94,7 +95,6 @@ export default function Home() {
     }
   };
 
-    // Yeh useEffect loader ke liye
     useEffect(() => {
       if (isLoading) {
         const interval = setInterval(() => {
@@ -102,12 +102,12 @@ export default function Home() {
             if (prevIndex < statuses.length - 1) {
               return prevIndex + 1;
             } else {
-              return prevIndex; // Last status pe ruk jao
+              return prevIndex;
             }
           });
-        }, 5000); // 5 seconds ke interval pe
+        }, 7500); // interval of 7.5 seconds
 
-        return () => clearInterval(interval); // Cleanup jab loading band ho
+        return () => clearInterval(interval);
       }
     }, [isLoading]);
   return (
