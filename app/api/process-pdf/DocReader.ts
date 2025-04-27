@@ -78,6 +78,7 @@ class DocReaderService {
     });
 
     const data = await res.json();
+    console.log(data)
     const responseText = data[0]?.result?.response ?? '';
 
     const startPageMatch = responseText.match(/Start page:\s*(\d+)/i);
