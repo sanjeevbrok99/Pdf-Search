@@ -105,7 +105,7 @@ export default function Home() {
               return prevIndex;
             }
           });
-        }, 7500); // interval of 7.5 seconds
+        }, 6000); // interval of 7.5 seconds
 
         return () => clearInterval(interval);
       }
