@@ -106,8 +106,8 @@ export async function GET(request: Request) {
 
     const docsToProcess = savedDocuments.filter(Boolean);
 
-    const baseUrl = process.env.VERCEL_URL
-      ? `${process.env.VERCEL_URL}`
+    const baseUrl = process.env.SERVER_URL
+      ? `${process.env.SERVER_URL}`
       : 'http://localhost:3001';
 
       const processDocsInBatch = async (docsToProcess: any[], batchSize: number = 5) => {
