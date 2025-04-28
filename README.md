@@ -33,7 +33,7 @@ A modern web application that enables users to upload, parse, and search through
 - **Caching**:
   Redis
 - **Image Preview**:
-  Puppeteer
+  Cloudinary
 - **Styling**:
   shadcn/ui components
 
